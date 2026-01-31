@@ -27,8 +27,11 @@ import { StarAnimation } from './components/StarAnimation';
 import { ScreenShake, ScreenFlash, useScreenEffects } from './components/ScreenEffects';
 import { AnimatedBackground } from './components/AnimatedBackground';
 import { GlowButton } from './components/GlowButton';
+// Bonus games
+import { BonusGameScreen } from './components/BonusGameScreen';
+import { useBonusGame, BonusGameType, Prize } from './hooks/useBonusGame';
 
-type Screen = 'home' | 'game' | 'levels' | 'pre-level';
+type Screen = 'home' | 'game' | 'levels' | 'pre-level' | 'bonus-game';
 
 // Get obstacle icon/emoji for display
 const getObstacleIcon = (obstacle: string): string => {
@@ -1095,6 +1098,12 @@ export default function App() {
   } = useBoosters();
   const [selectedBoosters, setSelectedBoosters] = useState<SelectedBoosters>(DEFAULT_SELECTED_BOOSTERS);
 
+  // Bonus game state
+  const [bonusGameType, setBonusGameType] = useState<BonusGameType>('wheel');
+  const [pendingNextLevelId, setPendingNextLevelId] = useState<number | null>(null);
+  const [lastEarnedStars, setLastEarnedStars] = useState(0);
+  const { selectRandomGame } = useBonusGame();
+
   const handleSaveScore = async (score: number) => {
     await saveHighScore(score);
   };
@@ -1109,6 +1118,8 @@ export default function App() {
     const movesRemaining = maxMoves - movesUsed;
     await completeLevel(levelId, stars, score, movesRemaining);
     await saveHighScore(score);
+    // Save stars for bonus game
+    setLastEarnedStars(stars);
   };
 
   const handleLevelFailed = async () => {
@@ -1174,9 +1185,41 @@ export default function App() {
   const handleNextLevel = () => {
     const nextId = getNextLevelId(currentLevelId);
     if (nextId) {
-      handleSelectLevel(nextId);
+      // Show bonus game before next level
+      setBonusGameType(selectRandomGame());
+      setPendingNextLevelId(nextId);
+      setScreen('bonus-game');
     } else {
       // No more levels, go back to level select
+      setScreen('levels');
+    }
+  };
+
+  // Handle bonus game completion
+  const handleBonusGameComplete = async (prize: Prize | null) => {
+    // Award prize
+    if (prize) {
+      if (prize.type === 'coins' && prize.amount) {
+        // Add coins - need to add to progress
+        await completeLevel(0, 0, 0, 0); // This triggers a save, coins handled separately
+      }
+      // Boosters are handled in useBoosters hook
+    }
+
+    // Continue to next level
+    if (pendingNextLevelId) {
+      handleSelectLevel(pendingNextLevelId);
+      setPendingNextLevelId(null);
+    } else {
+      setScreen('levels');
+    }
+  };
+
+  const handleBonusGameSkip = () => {
+    if (pendingNextLevelId) {
+      handleSelectLevel(pendingNextLevelId);
+      setPendingNextLevelId(null);
+    } else {
       setScreen('levels');
     }
   };
@@ -1231,6 +1274,14 @@ export default function App() {
           onToggleBooster={handleToggleBooster}
           getBoosterCount={getBoosterCount}
           coins={progress.coins}
+        />
+      )}
+      {screen === 'bonus-game' && (
+        <BonusGameScreen
+          gameType={bonusGameType}
+          earnedStars={lastEarnedStars}
+          onComplete={handleBonusGameComplete}
+          onSkip={handleBonusGameSkip}
         />
       )}
       {screen === 'game' && (
