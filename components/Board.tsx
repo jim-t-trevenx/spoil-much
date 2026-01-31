@@ -468,6 +468,7 @@ export const Board: React.FC<BoardProps> = ({
                   }
                   swapDirection={swapDir}
                   specialType={block.specialType}
+                  obstacle={block.obstacle}
                   isExploding={!!exploding}
                   isRocketExplosion={exploding?.isRocket ?? false}
                   rocketActivation={rocketActivation}

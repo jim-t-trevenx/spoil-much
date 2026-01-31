@@ -1,4 +1,4 @@
-import { Board, cloneBoard, swapBlocks } from './boardUtils';
+import { Board, cloneBoard, swapBlocks, canSwap } from './boardUtils';
 import { findMatches } from './matchDetection';
 import { GRID_SIZE } from './constants';
 
@@ -10,6 +10,48 @@ export type Move = {
   score: number;
 };
 
+// Check if a position has an obstacle nearby that could be damaged
+const hasAdjacentObstacle = (board: Board, row: number, col: number): boolean => {
+  const directions = [[-1, 0], [1, 0], [0, -1], [0, 1]];
+  for (const [dr, dc] of directions) {
+    const nr = row + dr;
+    const nc = col + dc;
+    if (nr >= 0 && nr < GRID_SIZE && nc >= 0 && nc < GRID_SIZE) {
+      const block = board[nr][nc];
+      if (block.obstacle && block.obstacle.type !== 'blocker') {
+        return true;
+      }
+    }
+  }
+  return false;
+};
+
+// Count obstacles that would be affected by a match at these positions
+const countAffectedObstacles = (board: Board, positions: { row: number; col: number }[]): number => {
+  const affectedPositions = new Set<string>();
+
+  for (const { row, col } of positions) {
+    // Check the block itself
+    if (board[row][col].obstacle) {
+      affectedPositions.add(`${row}-${col}`);
+    }
+    // Check adjacent for ice
+    const directions = [[-1, 0], [1, 0], [0, -1], [0, 1]];
+    for (const [dr, dc] of directions) {
+      const nr = row + dr;
+      const nc = col + dc;
+      if (nr >= 0 && nr < GRID_SIZE && nc >= 0 && nc < GRID_SIZE) {
+        const adjacentBlock = board[nr][nc];
+        if (adjacentBlock.obstacle?.type === 'ice') {
+          affectedPositions.add(`${nr}-${nc}`);
+        }
+      }
+    }
+  }
+
+  return affectedPositions.size;
+};
+
 // Find all valid moves that would create a match
 export const findAllValidMoves = (board: Board): Move[] => {
   const validMoves: Move[] = [];
@@ -17,6 +59,9 @@ export const findAllValidMoves = (board: Board): Move[] => {
   // Check all horizontal adjacent pairs
   for (let row = 0; row < GRID_SIZE; row++) {
     for (let col = 0; col < GRID_SIZE - 1; col++) {
+      // Skip if either block can't be swapped (blocker)
+      if (!canSwap(board[row][col]) || !canSwap(board[row][col + 1])) continue;
+
       const move = evaluateMove(board, row, col, row, col + 1);
       if (move) validMoves.push(move);
     }
@@ -25,6 +70,9 @@ export const findAllValidMoves = (board: Board): Move[] => {
   // Check all vertical adjacent pairs
   for (let row = 0; row < GRID_SIZE - 1; row++) {
     for (let col = 0; col < GRID_SIZE; col++) {
+      // Skip if either block can't be swapped (blocker)
+      if (!canSwap(board[row][col]) || !canSwap(board[row + 1][col])) continue;
+
       const move = evaluateMove(board, row, col, row + 1, col);
       if (move) validMoves.push(move);
     }
@@ -114,6 +162,22 @@ const evaluateMove = (
   // Extra bonus for propeller blocks
   if (block1.specialType === 'propeller' || block2.specialType === 'propeller') {
     score += 35;
+  }
+
+  // Bonus for damaging obstacles
+  const allMatchedPositions: { row: number; col: number }[] = [];
+  for (const match of matchResult.matches) {
+    allMatchedPositions.push(...match.blocks);
+  }
+  const obstaclesAffected = countAffectedObstacles(board, allMatchedPositions);
+  score += obstaclesAffected * 45; // Nice bonus for obstacle damage
+
+  // Extra bonus if the match result indicates obstacle damage
+  if (matchResult.obstacleDamage && matchResult.obstacleDamage.length > 0) {
+    score += matchResult.obstacleDamage.length * 30;
+    // Extra for destroyed obstacles
+    const destroyed = matchResult.obstacleDamage.filter(d => d.destroyed).length;
+    score += destroyed * 50;
   }
 
   // MASSIVE bonus for swapping two special blocks together (creates powerful combos!)

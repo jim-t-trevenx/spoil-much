@@ -1,9 +1,17 @@
-import { Board, Block, cloneBoard, SpecialType } from './boardUtils';
+import { Board, Block, cloneBoard, SpecialType, ObstacleType, canMatch } from './boardUtils';
 import { GRID_SIZE, getRandomColor } from './constants';
 
 export type Match = {
   blocks: { row: number; col: number }[];
   direction: 'horizontal' | 'vertical';
+};
+
+// Obstacle damage tracking
+export type ObstacleDamage = {
+  row: number;
+  col: number;
+  type: ObstacleType;
+  destroyed: boolean;
 };
 
 export type MatchResult = {
@@ -15,6 +23,7 @@ export type MatchResult = {
   bombCreations: { row: number; col: number; color: string }[];
   bombActivations: { row: number; col: number }[];
   propellerActivations: { row: number; col: number; targetRow: number; targetCol: number }[];
+  obstacleDamage: ObstacleDamage[];
 };
 
 export const findMatches = (board: Board): MatchResult => {
@@ -27,6 +36,16 @@ export const findMatches = (board: Board): MatchResult => {
   const bombCreations: { row: number; col: number; color: string }[] = [];
   const bombActivations: { row: number; col: number }[] = [];
   const propellerActivations: { row: number; col: number; targetRow: number; targetCol: number }[] = [];
+  const obstacleDamage: ObstacleDamage[] = [];
+  const damagedObstacles = new Set<string>();
+
+  // Helper to check if a block can participate in matches
+  const canBlockMatch = (r: number, c: number): boolean => {
+    const block = board[r]?.[c];
+    if (!block || !block.color) return false;
+    if (block.obstacle?.type === 'blocker') return false;
+    return true;
+  };
 
   // Track horizontal and vertical matches separately for L/T detection
   const horizontalMatches: Match[] = [];
@@ -35,17 +54,23 @@ export const findMatches = (board: Board): MatchResult => {
   // Find horizontal matches
   for (let row = 0; row < GRID_SIZE; row++) {
     for (let col = 0; col < GRID_SIZE - 2; col++) {
+      // Skip if block can't match
+      if (!canBlockMatch(row, col)) continue;
+
       const color = board[row][col].color;
       if (!color) continue;
 
+      // Check if adjacent blocks can match and have same color
       if (
+        canBlockMatch(row, col + 1) &&
+        canBlockMatch(row, col + 2) &&
         board[row][col + 1].color === color &&
         board[row][col + 2].color === color
       ) {
         const match: Match = { blocks: [], direction: 'horizontal' };
         let endCol = col;
 
-        while (endCol < GRID_SIZE && board[row][endCol].color === color) {
+        while (endCol < GRID_SIZE && canBlockMatch(row, endCol) && board[row][endCol].color === color) {
           const key = `${row}-${endCol}`;
           if (!matched.has(key)) {
             match.blocks.push({ row, col: endCol });
@@ -76,6 +101,21 @@ export const findMatches = (board: Board): MatchResult => {
               // Propeller will be handled after we know all matched positions
               // Mark for later processing
             }
+
+            // Track obstacle damage for matched blocks
+            if (block.obstacle && block.obstacle.type !== 'blocker') {
+              const obstacleKey = `${row}-${endCol}`;
+              if (!damagedObstacles.has(obstacleKey)) {
+                damagedObstacles.add(obstacleKey);
+                const destroyed = block.obstacle.health <= 1;
+                obstacleDamage.push({
+                  row,
+                  col: endCol,
+                  type: block.obstacle.type,
+                  destroyed,
+                });
+              }
+            }
           }
           endCol++;
         }
@@ -92,17 +132,23 @@ export const findMatches = (board: Board): MatchResult => {
   // Find vertical matches
   for (let col = 0; col < GRID_SIZE; col++) {
     for (let row = 0; row < GRID_SIZE - 2; row++) {
+      // Skip if block can't match
+      if (!canBlockMatch(row, col)) continue;
+
       const color = board[row][col].color;
       if (!color) continue;
 
+      // Check if adjacent blocks can match and have same color
       if (
+        canBlockMatch(row + 1, col) &&
+        canBlockMatch(row + 2, col) &&
         board[row + 1][col].color === color &&
         board[row + 2][col].color === color
       ) {
         const match: Match = { blocks: [], direction: 'vertical' };
         let endRow = row;
 
-        while (endRow < GRID_SIZE && board[endRow][col].color === color) {
+        while (endRow < GRID_SIZE && canBlockMatch(endRow, col) && board[endRow][col].color === color) {
           const key = `${endRow}-${col}`;
           if (!matched.has(key)) {
             match.blocks.push({ row: endRow, col });
@@ -129,6 +175,21 @@ export const findMatches = (board: Board): MatchResult => {
               });
             } else if (block.specialType === 'propeller') {
               // Propeller will be handled after we know all matched positions
+            }
+
+            // Track obstacle damage for matched blocks
+            if (block.obstacle && block.obstacle.type !== 'blocker') {
+              const obstacleKey = `${endRow}-${col}`;
+              if (!damagedObstacles.has(obstacleKey)) {
+                damagedObstacles.add(obstacleKey);
+                const destroyed = block.obstacle.health <= 1;
+                obstacleDamage.push({
+                  row: endRow,
+                  col,
+                  type: block.obstacle.type,
+                  destroyed,
+                });
+              }
             }
           }
           endRow++;
@@ -371,20 +432,65 @@ export const findMatches = (board: Board): MatchResult => {
     }
   }
 
-  return { matches, rocketCreations, rocketActivations, rainbowCreations, rainbowActivations, bombCreations, bombActivations, propellerActivations };
+  // Check for ice blocks adjacent to matched blocks (ice breaks when adjacent to matches)
+  const directions = [[-1, 0], [1, 0], [0, -1], [0, 1]];
+  for (const match of matches) {
+    for (const { row, col } of match.blocks) {
+      for (const [dr, dc] of directions) {
+        const nr = row + dr;
+        const nc = col + dc;
+        if (nr >= 0 && nr < GRID_SIZE && nc >= 0 && nc < GRID_SIZE) {
+          const adjacentBlock = board[nr][nc];
+          if (adjacentBlock.obstacle?.type === 'ice') {
+            const iceKey = `${nr}-${nc}`;
+            if (!damagedObstacles.has(iceKey)) {
+              damagedObstacles.add(iceKey);
+              obstacleDamage.push({
+                row: nr,
+                col: nc,
+                type: 'ice',
+                destroyed: adjacentBlock.obstacle.health <= 1,
+              });
+            }
+          }
+        }
+      }
+    }
+  }
+
+  return { matches, rocketCreations, rocketActivations, rainbowCreations, rainbowActivations, bombCreations, bombActivations, propellerActivations, obstacleDamage };
 };
 
 export const removeMatches = (
   board: Board,
   matchResult: MatchResult
-): { board: Board; clearedCount: number } => {
+): { board: Board; clearedCount: number; obstaclesCleared: ObstacleDamage[] } => {
   const newBoard = cloneBoard(board);
   const toRemove = new Set<string>();
+  const obstaclesCleared: ObstacleDamage[] = [];
+
+  // First, apply obstacle damage from the match result
+  for (const damage of matchResult.obstacleDamage) {
+    const block = newBoard[damage.row][damage.col];
+    if (block.obstacle) {
+      block.obstacle.health -= 1;
+      if (block.obstacle.health <= 0) {
+        block.obstacle = null;
+        obstaclesCleared.push({ ...damage, destroyed: true });
+      } else {
+        obstaclesCleared.push({ ...damage, destroyed: false });
+      }
+    }
+  }
 
   // Mark matched blocks for removal
   for (const match of matchResult.matches) {
     for (const { row, col } of match.blocks) {
-      toRemove.add(`${row}-${col}`);
+      const block = newBoard[row][col];
+      // Only remove if no obstacle or obstacle was destroyed
+      if (!block.obstacle) {
+        toRemove.add(`${row}-${col}`);
+      }
     }
   }
 
@@ -393,12 +499,40 @@ export const removeMatches = (
     if (rocket.type === 'rocket-h') {
       // Clear entire row
       for (let col = 0; col < GRID_SIZE; col++) {
-        toRemove.add(`${rocket.row}-${col}`);
+        const block = newBoard[rocket.row][col];
+        // Blockers can't be destroyed by rockets
+        if (block.obstacle?.type === 'blocker') continue;
+        // Damage other obstacles
+        if (block.obstacle) {
+          const obstacleType = block.obstacle.type;
+          block.obstacle.health -= 1;
+          if (block.obstacle.health <= 0) {
+            block.obstacle = null;
+            obstaclesCleared.push({ row: rocket.row, col, type: obstacleType, destroyed: true });
+            toRemove.add(`${rocket.row}-${col}`);
+          }
+        } else {
+          toRemove.add(`${rocket.row}-${col}`);
+        }
       }
     } else if (rocket.type === 'rocket-v') {
       // Clear entire column
       for (let row = 0; row < GRID_SIZE; row++) {
-        toRemove.add(`${row}-${rocket.col}`);
+        const block = newBoard[row][rocket.col];
+        // Blockers can't be destroyed by rockets
+        if (block.obstacle?.type === 'blocker') continue;
+        // Damage other obstacles
+        if (block.obstacle) {
+          const obstacleType = block.obstacle.type;
+          block.obstacle.health -= 1;
+          if (block.obstacle.health <= 0) {
+            block.obstacle = null;
+            obstaclesCleared.push({ row, col: rocket.col, type: obstacleType, destroyed: true });
+            toRemove.add(`${row}-${rocket.col}`);
+          }
+        } else {
+          toRemove.add(`${row}-${rocket.col}`);
+        }
       }
     }
   }
@@ -408,7 +542,19 @@ export const removeMatches = (
     for (let row = 0; row < GRID_SIZE; row++) {
       for (let col = 0; col < GRID_SIZE; col++) {
         if (newBoard[row][col].color === rainbow.targetColor) {
-          toRemove.add(`${row}-${col}`);
+          const block = newBoard[row][col];
+          if (block.obstacle?.type === 'blocker') continue;
+          if (block.obstacle) {
+            const obstacleType = block.obstacle.type;
+            block.obstacle.health -= 1;
+            if (block.obstacle.health <= 0) {
+              block.obstacle = null;
+              obstaclesCleared.push({ row, col, type: obstacleType, destroyed: true });
+              toRemove.add(`${row}-${col}`);
+            }
+          } else {
+            toRemove.add(`${row}-${col}`);
+          }
         }
       }
     }
@@ -421,7 +567,19 @@ export const removeMatches = (
         const r = bomb.row + dr;
         const c = bomb.col + dc;
         if (r >= 0 && r < GRID_SIZE && c >= 0 && c < GRID_SIZE) {
-          toRemove.add(`${r}-${c}`);
+          const block = newBoard[r][c];
+          if (block.obstacle?.type === 'blocker') continue;
+          if (block.obstacle) {
+            const obstacleType = block.obstacle.type;
+            block.obstacle.health -= 1;
+            if (block.obstacle.health <= 0) {
+              block.obstacle = null;
+              obstaclesCleared.push({ row: r, col: c, type: obstacleType, destroyed: true });
+              toRemove.add(`${r}-${c}`);
+            }
+          } else {
+            toRemove.add(`${r}-${c}`);
+          }
         }
       }
     }
@@ -434,20 +592,31 @@ export const removeMatches = (
         const r = propeller.targetRow + dr;
         const c = propeller.targetCol + dc;
         if (r >= 0 && r < GRID_SIZE && c >= 0 && c < GRID_SIZE) {
-          toRemove.add(`${r}-${c}`);
+          const block = newBoard[r][c];
+          if (block.obstacle?.type === 'blocker') continue;
+          if (block.obstacle) {
+            const obstacleType = block.obstacle.type;
+            block.obstacle.health -= 1;
+            if (block.obstacle.health <= 0) {
+              block.obstacle = null;
+              obstaclesCleared.push({ row: r, col: c, type: obstacleType, destroyed: true });
+              toRemove.add(`${r}-${c}`);
+            }
+          } else {
+            toRemove.add(`${r}-${c}`);
+          }
         }
       }
     }
   }
 
-  // Get positions where special blocks will be created
-  const rocketPositions = new Set(matchResult.rocketCreations.map(r => `${r.row}-${r.col}`));
-  const rainbowPositions = new Set(matchResult.rainbowCreations.map(r => `${r.row}-${r.col}`));
-  const bombPositions = new Set(matchResult.bombCreations.map(b => `${b.row}-${b.col}`));
-
   // Remove blocks but keep special block creation positions
   for (const key of toRemove) {
     const [row, col] = key.split('-').map(Number);
+    const block = newBoard[row][col];
+
+    // Skip blockers entirely
+    if (block.obstacle?.type === 'blocker') continue;
 
     // Check if this should become a bomb instead of being removed
     const bombCreation = matchResult.bombCreations.find(
@@ -461,6 +630,7 @@ export const removeMatches = (
         id: `bomb-${row}-${col}-${Date.now()}`,
         specialType: 'bomb',
         color: bombCreation.color,
+        obstacle: null,
       };
     } else {
       // Check if this should become a rainbow instead of being removed
@@ -475,6 +645,7 @@ export const removeMatches = (
           id: `rainbow-${row}-${col}-${Date.now()}`,
           specialType: 'rainbow',
           color: rainbowCreation.color,
+          obstacle: null,
         };
       } else {
         // Check if this should become a rocket instead of being removed
@@ -488,6 +659,7 @@ export const removeMatches = (
             ...newBoard[row][col],
             id: `rocket-${row}-${col}-${Date.now()}`,
             specialType: rocketCreation.type,
+            obstacle: null,
           };
         } else {
           // Remove the block
@@ -495,6 +667,7 @@ export const removeMatches = (
             ...newBoard[row][col],
             color: '',
             specialType: null,
+            obstacle: null,
             id: `empty-${row}-${col}-${Date.now()}`,
           };
         }
@@ -502,7 +675,7 @@ export const removeMatches = (
     }
   }
 
-  return { board: newBoard, clearedCount: toRemove.size };
+  return { board: newBoard, clearedCount: toRemove.size, obstaclesCleared };
 };
 
 export const applyGravity = (board: Board): Board => {
@@ -512,10 +685,20 @@ export const applyGravity = (board: Board): Board => {
     let emptyRow = GRID_SIZE - 1;
 
     for (let row = GRID_SIZE - 1; row >= 0; row--) {
-      if (newBoard[row][col].color !== '') {
+      const block = newBoard[row][col];
+
+      // Blockers don't move and block falling
+      if (block.obstacle?.type === 'blocker') {
+        // Reset emptyRow to above the blocker
+        emptyRow = row - 1;
+        continue;
+      }
+
+      if (block.color !== '') {
         if (row !== emptyRow) {
+          // Move block down, preserving its obstacle
           newBoard[emptyRow][col] = {
-            ...newBoard[row][col],
+            ...block,
             row: emptyRow,
             col,
             id: `${emptyRow}-${col}-${Date.now()}-${Math.random()}`,
@@ -526,6 +709,7 @@ export const applyGravity = (board: Board): Board => {
             row,
             col,
             specialType: null,
+            obstacle: null,
           };
         }
         emptyRow--;
@@ -541,13 +725,18 @@ export const fillEmptySpaces = (board: Board): Board => {
 
   for (let row = 0; row < GRID_SIZE; row++) {
     for (let col = 0; col < GRID_SIZE; col++) {
-      if (newBoard[row][col].color === '') {
+      const block = newBoard[row][col];
+      // Don't fill blocker spaces
+      if (block.obstacle?.type === 'blocker') continue;
+
+      if (block.color === '') {
         newBoard[row][col] = {
           id: `${row}-${col}-${Date.now()}-${Math.random()}`,
           color: getRandomColor(),
           row,
           col,
           specialType: null,
+          obstacle: null,
         };
       }
     }
