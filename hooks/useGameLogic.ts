@@ -908,6 +908,214 @@ export const useGameLogic = (options: UseGameLogicOptions | Difficulty = 'medium
     handleSwipe,
   });
 
+  // ============ POWER-UP FUNCTIONS ============
+
+  // Hammer: Destroy a single block
+  const useHammer = useCallback((row: number, col: number) => {
+    if (gameState !== 'idle') return false;
+    const block = board[row][col];
+    if (!block.color) return false;
+
+    setGameState('removing');
+    setExplodingBlocks([{ row, col, isRocket: false }]);
+
+    setTimeout(() => {
+      const newBoard = cloneBoard(board);
+      newBoard[row][col] = {
+        ...newBoard[row][col],
+        color: '',
+        specialType: null,
+      };
+      setBoard(newBoard);
+      setExplodingBlocks([]);
+      setGameState('falling');
+
+      // Apply gravity
+      setTimeout(() => {
+        const afterGravity = applyGravity(newBoard);
+        setBoard(afterGravity);
+        setGameState('filling');
+
+        setTimeout(() => {
+          const filled = fillEmptySpaces(afterGravity);
+          setBoard(filled);
+          setGameState('checking');
+
+          setTimeout(() => {
+            processMatchesRef.current?.();
+          }, 300);
+        }, 200);
+      }, 200);
+    }, 300);
+
+    return true;
+  }, [board, gameState]);
+
+  // Shuffle: Randomize all blocks on the board
+  const useShuffle = useCallback(() => {
+    if (gameState !== 'idle') return false;
+
+    setGameState('animating');
+
+    const newBoard = cloneBoard(board);
+    const colors: string[] = [];
+
+    // Collect all colors
+    for (let r = 0; r < GRID_SIZE; r++) {
+      for (let c = 0; c < GRID_SIZE; c++) {
+        if (newBoard[r][c].color) {
+          colors.push(newBoard[r][c].color);
+        }
+      }
+    }
+
+    // Shuffle colors
+    for (let i = colors.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [colors[i], colors[j]] = [colors[j], colors[i]];
+    }
+
+    // Reassign colors
+    let colorIndex = 0;
+    for (let r = 0; r < GRID_SIZE; r++) {
+      for (let c = 0; c < GRID_SIZE; c++) {
+        if (newBoard[r][c].color) {
+          newBoard[r][c] = {
+            ...newBoard[r][c],
+            color: colors[colorIndex++],
+          };
+        }
+      }
+    }
+
+    setTimeout(() => {
+      setBoard(newBoard);
+      setGameState('checking');
+
+      setTimeout(() => {
+        processMatchesRef.current?.();
+      }, 300);
+    }, 500);
+
+    return true;
+  }, [board, gameState]);
+
+  // Color Bomb: Clear all blocks of a specific color
+  const useColorBomb = useCallback((row: number, col: number) => {
+    if (gameState !== 'idle') return false;
+    const targetColor = board[row][col].color;
+    if (!targetColor) return false;
+
+    setGameState('removing');
+
+    const exploding: ExplodingBlock[] = [];
+    const newBoard = cloneBoard(board);
+    let scoreGain = 0;
+
+    for (let r = 0; r < GRID_SIZE; r++) {
+      for (let c = 0; c < GRID_SIZE; c++) {
+        if (newBoard[r][c].color === targetColor) {
+          exploding.push({ row: r, col: c, isRocket: false });
+          scoreGain += 10;
+        }
+      }
+    }
+
+    setExplodingBlocks(exploding);
+    setScore(prev => prev + scoreGain);
+
+    setTimeout(() => {
+      for (const { row: r, col: c } of exploding) {
+        newBoard[r][c] = {
+          ...newBoard[r][c],
+          color: '',
+          specialType: null,
+        };
+      }
+      setBoard(newBoard);
+      setExplodingBlocks([]);
+      setGameState('falling');
+
+      setTimeout(() => {
+        const afterGravity = applyGravity(newBoard);
+        setBoard(afterGravity);
+        setGameState('filling');
+
+        setTimeout(() => {
+          const filled = fillEmptySpaces(afterGravity);
+          setBoard(filled);
+          setGameState('checking');
+
+          setTimeout(() => {
+            processMatchesRef.current?.();
+          }, 300);
+        }, 200);
+      }, 200);
+    }, 400);
+
+    return true;
+  }, [board, gameState]);
+
+  // Row Blast: Clear an entire row
+  const useRowBlast = useCallback((row: number) => {
+    if (gameState !== 'idle') return false;
+
+    setGameState('removing');
+
+    const exploding: ExplodingBlock[] = [];
+    const newBoard = cloneBoard(board);
+    let scoreGain = 0;
+
+    for (let c = 0; c < GRID_SIZE; c++) {
+      if (newBoard[row][c].color) {
+        exploding.push({ row, col: c, isRocket: true });
+        scoreGain += 10;
+      }
+    }
+
+    setExplodingBlocks(exploding);
+    setScore(prev => prev + scoreGain);
+    setPowerUpActivations({
+      rockets: [{ row, col: Math.floor(GRID_SIZE / 2), type: 'rocket-h' }],
+      rainbows: [],
+      bombs: [],
+      propellers: [],
+      combos: [],
+    });
+
+    setTimeout(() => {
+      for (let c = 0; c < GRID_SIZE; c++) {
+        newBoard[row][c] = {
+          ...newBoard[row][c],
+          color: '',
+          specialType: null,
+        };
+      }
+      setBoard(newBoard);
+      setExplodingBlocks([]);
+      setPowerUpActivations({ rockets: [], rainbows: [], bombs: [], propellers: [], combos: [] });
+      setGameState('falling');
+
+      setTimeout(() => {
+        const afterGravity = applyGravity(newBoard);
+        setBoard(afterGravity);
+        setGameState('filling');
+
+        setTimeout(() => {
+          const filled = fillEmptySpaces(afterGravity);
+          setBoard(filled);
+          setGameState('checking');
+
+          setTimeout(() => {
+            processMatchesRef.current?.();
+          }, 300);
+        }, 200);
+      }, 200);
+    }, 400);
+
+    return true;
+  }, [board, gameState]);
+
   return {
     board,
     score,
@@ -929,5 +1137,10 @@ export const useGameLogic = (options: UseGameLogicOptions | Difficulty = 'medium
     handleSwipe,
     handleSwapAnimationComplete,
     resetGame,
+    // Power-up functions
+    useHammer,
+    useShuffle,
+    useColorBomb,
+    useRowBlast,
   };
 };

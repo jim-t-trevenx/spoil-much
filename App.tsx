@@ -588,6 +588,11 @@ function GameScreen({
     handleSwipe,
     handleSwapAnimationComplete,
     resetGame,
+    // Power-up functions
+    useHammer,
+    useShuffle,
+    useColorBomb,
+    useRowBlast,
   } = useGameLogic({ difficulty, demoMode, gameMode, levelConfig });
 
   // Casino effects
@@ -728,10 +733,17 @@ function GameScreen({
     }
 
     // For instant power-ups (shuffle, extra_time), use immediately
-    if (type === 'shuffle' || type === 'extra_time') {
+    if (type === 'shuffle') {
       if (onUseInGamePowerUp && onUseInGamePowerUp(type)) {
-        triggerFlash('#00FFFF');
-        triggerShake('light');
+        if (useShuffle()) {
+          triggerFlash('#00FFFF');
+          triggerShake('light');
+        }
+      }
+    } else if (type === 'extra_time') {
+      // TODO: Add time to arcade mode timer
+      if (onUseInGamePowerUp && onUseInGamePowerUp(type)) {
+        triggerFlash('#00FF00');
       }
     } else {
       // For targeted power-ups (hammer, color_bomb, row_blast), enter selection mode
@@ -741,6 +753,40 @@ function GameScreen({
 
   const handleCancelPowerUp = () => {
     setActivePowerUp(null);
+  };
+
+  // Wrapped block press handler that checks for active power-ups
+  const handleBlockPressWithPowerUp = (row: number, col: number) => {
+    if (activePowerUp) {
+      let success = false;
+
+      switch (activePowerUp) {
+        case 'hammer':
+          success = useHammer(row, col);
+          break;
+        case 'color_bomb':
+          success = useColorBomb(row, col);
+          break;
+        case 'row_blast':
+          success = useRowBlast(row);
+          break;
+      }
+
+      if (success) {
+        // Consume the booster
+        if (onUseInGamePowerUp) {
+          onUseInGamePowerUp(activePowerUp);
+        }
+        // Trigger effects
+        triggerFlash(activePowerUp === 'hammer' ? '#FF6600' : activePowerUp === 'color_bomb' ? '#FF00FF' : '#00FFFF');
+        triggerShake(activePowerUp === 'row_blast' ? 'medium' : 'light');
+        // Deactivate power-up
+        setActivePowerUp(null);
+      }
+    } else {
+      // Normal block press
+      handleBlockPress(row, col);
+    }
   };
 
   return (
@@ -791,7 +837,7 @@ function GameScreen({
 
           <ScoreDisplay score={score} combo={combo} />
 
-          <View style={styles.gameAreaBorder}>
+          <View style={[styles.gameAreaBorder, activePowerUp && styles.gameAreaPowerUpActive]}>
             <Board
               board={board}
               selectedBlock={selectedBlock}
@@ -799,8 +845,8 @@ function GameScreen({
               explodingBlocks={explodingBlocks}
               powerUpActivations={powerUpActivations}
               demoMode={demoMode}
-              onBlockPress={handleBlockPress}
-              onSwipe={handleSwipe}
+              onBlockPress={handleBlockPressWithPowerUp}
+              onSwipe={activePowerUp ? () => {} : handleSwipe}
               onSwapAnimationComplete={handleSwapAnimationComplete}
             />
           </View>
@@ -1355,6 +1401,13 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 0 },
     shadowOpacity: 0.4,
     shadowRadius: 12,
+  },
+  gameAreaPowerUpActive: {
+    borderColor: '#4CAF50',
+    borderWidth: 4,
+    shadowColor: '#4CAF50',
+    shadowOpacity: 0.8,
+    shadowRadius: 16,
   },
   header: {
     flexDirection: 'row',
