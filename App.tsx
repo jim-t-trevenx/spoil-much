@@ -12,8 +12,69 @@ import { ScoreDisplay } from './components/ScoreDisplay';
 import { useGameLogic, GameMode } from './hooks/useGameLogic';
 import { useHighScores, HighScore } from './hooks/useHighScores';
 import { Difficulty } from './utils/boardUtils';
+import { LevelConfig, ObjectiveProgress, getObjectiveText, getColorName } from './types/level';
+import { COLORS } from './utils/constants';
 
 type Screen = 'home' | 'game';
+
+// Sample level config for testing objectives
+const SAMPLE_LEVEL: LevelConfig = {
+  id: 1,
+  name: 'Level 1',
+  moves: 20,
+  objectives: [
+    { type: 'clearColor', color: COLORS[0], count: 30 }, // Red
+    { type: 'clearColor', color: COLORS[2], count: 25 }, // Blue
+  ],
+};
+
+// Objectives Panel Component
+function ObjectivesPanel({ objectives }: { objectives: ObjectiveProgress[] }) {
+  if (objectives.length === 0) return null;
+
+  return (
+    <View style={styles.objectivesPanel}>
+      <Text style={styles.objectivesTitle}>OBJECTIVES</Text>
+      <View style={styles.objectivesList}>
+        {objectives.map((progress, index) => (
+          <View key={index} style={styles.objectiveItem}>
+            {progress.objective.type === 'clearColor' && (
+              <View
+                style={[
+                  styles.objectiveColorDot,
+                  { backgroundColor: progress.objective.color },
+                ]}
+              />
+            )}
+            <View style={styles.objectiveTextContainer}>
+              <Text
+                style={[
+                  styles.objectiveText,
+                  progress.completed && styles.objectiveTextCompleted,
+                ]}
+              >
+                {progress.objective.type === 'clearColor'
+                  ? `${getColorName(progress.objective.color)}`
+                  : getObjectiveText(progress.objective)}
+              </Text>
+              <Text
+                style={[
+                  styles.objectiveProgress,
+                  progress.completed && styles.objectiveProgressCompleted,
+                ]}
+              >
+                {progress.current}/{progress.target}
+              </Text>
+            </View>
+            {progress.completed && (
+              <Text style={styles.objectiveCheck}>✓</Text>
+            )}
+          </View>
+        ))}
+      </View>
+    </View>
+  );
+}
 
 function HomeScreen({
   onPlay,
@@ -87,12 +148,14 @@ function GameScreen({
   difficulty,
   gameMode = 'classic',
   demoMode = false,
+  levelConfig,
 }: {
   onBack: () => void;
   onSaveScore: (score: number) => void;
   difficulty: Difficulty;
   gameMode?: GameMode;
   demoMode?: boolean;
+  levelConfig?: LevelConfig;
 }) {
   const {
     board,
@@ -105,11 +168,13 @@ function GameScreen({
     timeRemaining,
     movesRemaining,
     isGameOver,
+    isLevelComplete,
+    objectiveProgress,
     handleBlockPress,
     handleSwipe,
     handleSwapAnimationComplete,
     resetGame,
-  } = useGameLogic({ difficulty, demoMode, gameMode });
+  } = useGameLogic({ difficulty, demoMode, gameMode, levelConfig });
 
   const handleBack = () => {
     if (!demoMode && score > 0) {
@@ -132,6 +197,17 @@ function GameScreen({
 
   const handlePlayAgain = () => {
     onSaveScore(score);
+    resetGame();
+  };
+
+  const handleLevelCompleteBack = () => {
+    onSaveScore(score);
+    onBack();
+  };
+
+  const handleNextLevel = () => {
+    onSaveScore(score);
+    // For now, just reset (in future, load next level)
     resetGame();
   };
 
@@ -184,6 +260,11 @@ function GameScreen({
 
       <ScoreDisplay score={score} combo={combo} />
 
+      {/* Objectives Panel */}
+      {objectiveProgress.length > 0 && (
+        <ObjectivesPanel objectives={objectiveProgress} />
+      )}
+
       <Board
         board={board}
         selectedBlock={selectedBlock}
@@ -203,7 +284,7 @@ function GameScreen({
       </Text>
 
       {/* Game Over Overlay */}
-      {isGameOver && (
+      {isGameOver && !isLevelComplete && (
         <View style={styles.gameOverOverlay}>
           <View style={styles.gameOverModal}>
             <Text style={styles.gameOverTitle}>
@@ -222,6 +303,30 @@ function GameScreen({
           </View>
         </View>
       )}
+
+      {/* Level Complete Overlay */}
+      {isLevelComplete && (
+        <View style={styles.gameOverOverlay}>
+          <View style={[styles.gameOverModal, styles.levelCompleteModal]}>
+            <Text style={styles.levelCompleteTitle}>LEVEL COMPLETE!</Text>
+            <Text style={styles.gameOverScore}>Score</Text>
+            <Text style={styles.gameOverScoreValue}>{score.toLocaleString()}</Text>
+            {movesRemaining !== null && movesRemaining > 0 && (
+              <Text style={styles.movesBonus}>
+                +{movesRemaining} moves remaining!
+              </Text>
+            )}
+            <View style={styles.gameOverButtons}>
+              <TouchableOpacity style={[styles.gameOverButton, styles.nextLevelButton]} onPress={handleNextLevel}>
+                <Text style={styles.gameOverButtonText}>NEXT LEVEL</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={[styles.gameOverButton, styles.gameOverButtonSecondary]} onPress={handleLevelCompleteBack}>
+                <Text style={styles.gameOverButtonTextSecondary}>HOME</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      )}
     </View>
   );
 }
@@ -232,6 +337,7 @@ export default function App() {
   const [gameMode, setGameMode] = useState<GameMode>('classic');
   const [demoMode, setDemoMode] = useState(false);
   const [gameKey, setGameKey] = useState(0);
+  const [currentLevel, setCurrentLevel] = useState<LevelConfig | undefined>(undefined);
   const { highScores, saveHighScore } = useHighScores();
 
   const handleSaveScore = async (score: number) => {
@@ -242,6 +348,8 @@ export default function App() {
     setDifficulty(selectedDifficulty);
     setGameMode(selectedGameMode);
     setDemoMode(false);
+    // Use sample level for classic mode to test objectives
+    setCurrentLevel(selectedGameMode === 'classic' ? SAMPLE_LEVEL : undefined);
     setGameKey(prev => prev + 1);
     setScreen('game');
   };
@@ -272,6 +380,7 @@ export default function App() {
           difficulty={difficulty}
           gameMode={gameMode}
           demoMode={demoMode}
+          levelConfig={currentLevel}
         />
       )}
     </SafeAreaView>
@@ -508,6 +617,84 @@ const styles = StyleSheet.create({
   },
   movesTextWarning: {
     color: '#FF9632',
+  },
+  // Objectives Panel styles
+  objectivesPanel: {
+    backgroundColor: 'rgba(0, 0, 0, 0.3)',
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 12,
+    minWidth: 200,
+  },
+  objectivesTitle: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#888',
+    letterSpacing: 1,
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  objectivesList: {
+    gap: 6,
+  },
+  objectiveItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    borderRadius: 8,
+    padding: 8,
+  },
+  objectiveColorDot: {
+    width: 20,
+    height: 20,
+    borderRadius: 4,
+    marginRight: 10,
+    borderWidth: 2,
+    borderColor: 'rgba(255, 255, 255, 0.3)',
+  },
+  objectiveTextContainer: {
+    flex: 1,
+  },
+  objectiveText: {
+    fontSize: 13,
+    color: '#FFF',
+    fontWeight: '500',
+  },
+  objectiveTextCompleted: {
+    color: '#4CAF50',
+  },
+  objectiveProgress: {
+    fontSize: 12,
+    color: '#AAA',
+    marginTop: 2,
+  },
+  objectiveProgressCompleted: {
+    color: '#4CAF50',
+  },
+  objectiveCheck: {
+    fontSize: 16,
+    color: '#4CAF50',
+    fontWeight: 'bold',
+    marginLeft: 8,
+  },
+  // Level Complete styles
+  levelCompleteModal: {
+    borderColor: '#4CAF50',
+  },
+  levelCompleteTitle: {
+    fontSize: 28,
+    fontWeight: 'bold',
+    color: '#4CAF50',
+    marginBottom: 24,
+    letterSpacing: 2,
+  },
+  movesBonus: {
+    fontSize: 14,
+    color: '#4CAF50',
+    marginBottom: 16,
+  },
+  nextLevelButton: {
+    backgroundColor: '#4CAF50',
   },
   // Game Over styles
   gameOverOverlay: {

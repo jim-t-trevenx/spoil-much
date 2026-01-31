@@ -1,8 +1,27 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { Board, createInitialBoard, swapBlocks, areAdjacent, Difficulty, cloneBoard } from '../utils/boardUtils';
 import { GRID_SIZE, DEFAULT_MOVES, DEFAULT_TIME_LIMIT } from '../utils/constants';
+import { LevelConfig, ObjectiveProgress, ObjectiveType } from '../types/level';
 
 export type GameMode = 'classic' | 'arcade';
+
+// Helper to get target count from an objective
+const getObjectiveTarget = (objective: ObjectiveType): number => {
+  switch (objective.type) {
+    case 'clearColor':
+      return objective.count;
+    case 'reachScore':
+      return objective.score;
+    case 'clearObstacle':
+      return objective.count;
+    case 'collectItem':
+      return objective.count;
+    case 'useSpecial':
+      return objective.count;
+    default:
+      return 0;
+  }
+};
 import {
   findMatches,
   removeMatches,
@@ -67,6 +86,7 @@ type UseGameLogicOptions = {
   gameMode?: GameMode;
   maxMoves?: number;
   timeLimit?: number; // seconds for arcade mode
+  levelConfig?: LevelConfig; // Level objectives and settings
 };
 
 export const useGameLogic = (options: UseGameLogicOptions | Difficulty = 'medium') => {
@@ -77,9 +97,14 @@ export const useGameLogic = (options: UseGameLogicOptions | Difficulty = 'medium
     gameMode = 'classic',
     maxMoves = DEFAULT_MOVES,
     timeLimit = DEFAULT_TIME_LIMIT,
+    levelConfig,
   } = typeof options === 'string' ? { difficulty: options } : options;
 
   const isArcadeMode = gameMode === 'arcade';
+  const hasObjectives = levelConfig && levelConfig.objectives.length > 0;
+
+  // Use level config moves if provided, otherwise use maxMoves
+  const effectiveMaxMoves = levelConfig?.moves ?? maxMoves;
   const [board, setBoard] = useState<Board>(() => createInitialBoard(difficulty));
   const [score, setScore] = useState(0);
   const [selectedBlock, setSelectedBlock] = useState<{ row: number; col: number } | null>(null);
@@ -106,10 +131,26 @@ export const useGameLogic = (options: UseGameLogicOptions | Difficulty = 'medium
   const [timeRemaining, setTimeRemaining] = useState(isArcadeMode ? timeLimit : null);
 
   // Moves state (classic mode)
-  const [movesRemaining, setMovesRemaining] = useState(isArcadeMode ? null : maxMoves);
+  const [movesRemaining, setMovesRemaining] = useState(isArcadeMode ? null : effectiveMaxMoves);
 
   const [isGameOver, setIsGameOver] = useState(false);
+  const [isLevelComplete, setIsLevelComplete] = useState(false);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Initialize objective progress from level config
+  const initializeObjectiveProgress = useCallback((): ObjectiveProgress[] => {
+    if (!levelConfig || !levelConfig.objectives.length) return [];
+    return levelConfig.objectives.map(objective => ({
+      objective,
+      current: 0,
+      target: getObjectiveTarget(objective),
+      completed: false,
+    }));
+  }, [levelConfig]);
+
+  const [objectiveProgress, setObjectiveProgress] = useState<ObjectiveProgress[]>(
+    () => initializeObjectiveProgress()
+  );
 
   // Start/manage countdown timer (arcade mode only)
   useEffect(() => {
@@ -132,6 +173,60 @@ export const useGameLogic = (options: UseGameLogicOptions | Difficulty = 'medium
       if (timerRef.current) clearInterval(timerRef.current);
     };
   }, [isArcadeMode, demoMode, isGameOver]);
+
+  // Update objective progress based on cleared blocks
+  const updateObjectiveProgress = useCallback((
+    clearedBlocks: Array<{ row: number; col: number }>,
+    currentBoard: Board,
+    earnedScore: number
+  ) => {
+    if (!hasObjectives) return;
+
+    // Count cleared blocks by color
+    const colorCounts: Record<string, number> = {};
+    for (const { row, col } of clearedBlocks) {
+      const color = currentBoard[row]?.[col]?.color;
+      if (color) {
+        colorCounts[color] = (colorCounts[color] || 0) + 1;
+      }
+    }
+
+    setObjectiveProgress(prev => {
+      const updated = prev.map(progress => {
+        if (progress.completed) return progress;
+
+        let newCurrent = progress.current;
+
+        switch (progress.objective.type) {
+          case 'clearColor':
+            const colorObj = progress.objective;
+            newCurrent += colorCounts[colorObj.color] || 0;
+            break;
+          case 'reachScore':
+            // Score objectives track cumulative score
+            newCurrent = score + earnedScore;
+            break;
+          // Other objective types will be handled in future milestones
+        }
+
+        const completed = newCurrent >= progress.target;
+        return {
+          ...progress,
+          current: Math.min(newCurrent, progress.target),
+          completed,
+        };
+      });
+
+      // Check if all objectives are complete
+      const allComplete = updated.every(p => p.completed);
+      if (allComplete && !isLevelComplete) {
+        // Delay level complete to let animations finish
+        setTimeout(() => setIsLevelComplete(true), 500);
+      }
+
+      return updated;
+    });
+  }, [hasObjectives, score, isLevelComplete]);
 
   const processMatchesRef = useRef<(() => void) | undefined>(undefined);
 
@@ -247,6 +342,9 @@ export const useGameLogic = (options: UseGameLogicOptions | Difficulty = 'medium
       setScore(prev => prev + earnedScore);
       setCombo(prev => prev + 1);
 
+      // Update objective progress with cleared blocks
+      updateObjectiveProgress(exploding, board, earnedScore);
+
       setTimeout(() => {
         const { board: boardAfterRemoval } = removeMatches(board, matchResult);
         setBoard(boardAfterRemoval);
@@ -270,12 +368,12 @@ export const useGameLogic = (options: UseGameLogicOptions | Difficulty = 'medium
       setCombo(0);
       setGameState('idle');
 
-      // Check for game over in classic mode (no moves remaining)
-      if (!isArcadeMode && movesRemaining !== null && movesRemaining <= 0) {
+      // Check for game over in classic mode (no moves remaining and objectives not complete)
+      if (!isArcadeMode && movesRemaining !== null && movesRemaining <= 0 && !isLevelComplete) {
         setIsGameOver(true);
       }
     }
-  }, [board, combo, isArcadeMode, movesRemaining]);
+  }, [board, combo, isArcadeMode, movesRemaining, isLevelComplete, updateObjectiveProgress]);
 
   processMatchesRef.current = processMatches;
 
@@ -494,6 +592,13 @@ export const useGameLogic = (options: UseGameLogicOptions | Difficulty = 'medium
     setScore(prev => prev + comboScore);
     setCombo(prev => prev + 1);
 
+    // Update objective progress with cleared blocks from combo
+    const comboExploding = Array.from(toRemove).map(key => {
+      const [r, c] = key.split('-').map(Number);
+      return { row: r, col: c };
+    });
+    updateObjectiveProgress(comboExploding, currentBoard, comboScore);
+
     // Set up exploding blocks
     const exploding: ExplodingBlock[] = [];
     for (const key of toRemove) {
@@ -532,7 +637,7 @@ export const useGameLogic = (options: UseGameLogicOptions | Difficulty = 'medium
         }, 150);
       }, 150);
     }, POWER_UP_DURATIONS.combo);
-  }, []);
+  }, [updateObjectiveProgress]);
 
   // Find best targets for propeller combos
   const findBestPropellerTargets = (
@@ -714,6 +819,8 @@ export const useGameLogic = (options: UseGameLogicOptions | Difficulty = 'medium
     setExplodingBlocks([]);
     setPowerUpActivations({ rockets: [], rainbows: [], bombs: [], propellers: [], combos: [] });
     setIsGameOver(false);
+    setIsLevelComplete(false);
+    setObjectiveProgress(initializeObjectiveProgress());
 
     // Reset timer or moves based on game mode
     if (isArcadeMode) {
@@ -721,9 +828,9 @@ export const useGameLogic = (options: UseGameLogicOptions | Difficulty = 'medium
       setMovesRemaining(null);
     } else {
       setTimeRemaining(null);
-      setMovesRemaining(maxMoves);
+      setMovesRemaining(effectiveMaxMoves);
     }
-  }, [difficulty, isArcadeMode, timeLimit, maxMoves]);
+  }, [difficulty, isArcadeMode, timeLimit, effectiveMaxMoves, initializeObjectiveProgress]);
 
   // Demo mode: automatically make moves
   useDemoMode({
@@ -747,6 +854,9 @@ export const useGameLogic = (options: UseGameLogicOptions | Difficulty = 'medium
     timeRemaining,
     movesRemaining,
     isGameOver,
+    isLevelComplete,
+    objectiveProgress,
+    levelConfig,
     handleBlockPress,
     handleSwipe,
     handleSwapAnimationComplete,
