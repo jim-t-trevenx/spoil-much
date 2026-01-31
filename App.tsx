@@ -40,6 +40,70 @@ const getObstacleIcon = (obstacle: string): string => {
   }
 };
 
+// Power-Ups Bar Component - Bottom of game screen
+function PowerUpsBar({
+  gameMode,
+  onUsePowerUp,
+  getBoosterCount,
+  activePowerUp,
+  onCancelPowerUp,
+}: {
+  gameMode: GameMode;
+  onUsePowerUp: (type: InGamePowerUpType) => void;
+  getBoosterCount: (type: InGamePowerUpType) => number;
+  activePowerUp: InGamePowerUpType | null;
+  onCancelPowerUp: () => void;
+}) {
+  const powerUps = getInGamePowerUps().filter(type => {
+    // Hide extra_time in classic mode
+    if (type === 'extra_time' && gameMode === 'classic') return false;
+    return true;
+  });
+
+  return (
+    <View style={styles.powerUpsBar}>
+      {activePowerUp && (
+        <TouchableOpacity style={styles.cancelPowerUp} onPress={onCancelPowerUp}>
+          <Text style={styles.cancelPowerUpText}>✕ Cancel</Text>
+        </TouchableOpacity>
+      )}
+      <View style={styles.powerUpsList}>
+        {powerUps.map(type => {
+          const info = BOOSTER_INFO[type];
+          const count = getBoosterCount(type);
+          const isActive = activePowerUp === type;
+
+          return (
+            <TouchableOpacity
+              key={type}
+              style={[
+                styles.powerUpButton,
+                isActive && styles.powerUpButtonActive,
+                count === 0 && styles.powerUpButtonDisabled,
+              ]}
+              onPress={() => count > 0 && onUsePowerUp(type)}
+              disabled={count === 0 || (activePowerUp !== null && !isActive)}
+            >
+              <Text style={styles.powerUpIcon}>{info.icon}</Text>
+              <Text style={[
+                styles.powerUpCount,
+                count === 0 && styles.powerUpCountEmpty,
+              ]}>
+                {count}
+              </Text>
+              {isActive && (
+                <View style={styles.powerUpActiveBadge}>
+                  <Text style={styles.powerUpActiveText}>TAP</Text>
+                </View>
+              )}
+            </TouchableOpacity>
+          );
+        })}
+      </View>
+    </View>
+  );
+}
+
 // Objectives Panel Component - Compact top-left display
 function ObjectivesPanel({ objectives }: { objectives: ObjectiveProgress[] }) {
   if (objectives.length === 0) return null;
@@ -303,6 +367,9 @@ function GameScreen({
   const [showCelebration, setShowCelebration] = useState(false);
   const [showStarAnimation, setShowStarAnimation] = useState(false);
   const [earnedStars, setEarnedStars] = useState(0);
+
+  // Power-up state
+  const [activePowerUp, setActivePowerUp] = useState<InGamePowerUpType | null>(null);
   const {
     shakeTrigger,
     shakeIntensity,
@@ -425,6 +492,30 @@ function GameScreen({
     return `${mins}:${secs.toString().padStart(2, '0')}`;
   };
 
+  // Handle power-up activation
+  const handleUsePowerUp = (type: InGamePowerUpType) => {
+    if (activePowerUp === type) {
+      // Deactivate if already active
+      setActivePowerUp(null);
+      return;
+    }
+
+    // For instant power-ups (shuffle, extra_time), use immediately
+    if (type === 'shuffle' || type === 'extra_time') {
+      if (onUseInGamePowerUp && onUseInGamePowerUp(type)) {
+        triggerFlash('#00FFFF');
+        triggerShake('light');
+      }
+    } else {
+      // For targeted power-ups (hammer, color_bomb, row_blast), enter selection mode
+      setActivePowerUp(type);
+    }
+  };
+
+  const handleCancelPowerUp = () => {
+    setActivePowerUp(null);
+  };
+
   return (
     <ScreenShake trigger={shakeTrigger} intensity={shakeIntensity}>
       <AnimatedBackground combo={combo} particlesEnabled gradientEnabled={false}>
@@ -488,8 +579,21 @@ function GameScreen({
           <Text style={styles.instructions}>
             {demoMode
               ? 'Watching AI play automatically.\nTap "Exit Demo" to return home.'
-              : 'Swipe blocks to swap them.\nMatch 3 or more of the same color!'}
+              : activePowerUp
+                ? `Tap a block to use ${BOOSTER_INFO[activePowerUp].name}`
+                : 'Swipe blocks to swap them.\nMatch 3 or more of the same color!'}
           </Text>
+
+          {/* Power-Ups Bar */}
+          {!demoMode && getBoosterCount && (
+            <PowerUpsBar
+              gameMode={gameMode || 'classic'}
+              onUsePowerUp={handleUsePowerUp}
+              getBoosterCount={getBoosterCount}
+              activePowerUp={activePowerUp}
+              onCancelPowerUp={handleCancelPowerUp}
+            />
+          )}
 
           {/* Game Over Overlay */}
           {isGameOver && !isLevelComplete && (
@@ -1058,11 +1162,84 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   instructions: {
-    marginTop: 30,
+    marginTop: 20,
     fontSize: 14,
     color: '#666',
     textAlign: 'center',
     lineHeight: 22,
+  },
+  // Power-Ups Bar styles
+  powerUpsBar: {
+    marginTop: 16,
+    alignItems: 'center',
+  },
+  powerUpsList: {
+    flexDirection: 'row',
+    gap: 12,
+    backgroundColor: 'rgba(0, 0, 0, 0.4)',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 20,
+    borderWidth: 2,
+    borderColor: 'rgba(255, 255, 255, 0.1)',
+  },
+  powerUpButton: {
+    width: 56,
+    height: 56,
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    borderRadius: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: 'rgba(255, 255, 255, 0.2)',
+  },
+  powerUpButtonActive: {
+    backgroundColor: 'rgba(76, 175, 80, 0.3)',
+    borderColor: '#4CAF50',
+    shadowColor: '#4CAF50',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.8,
+    shadowRadius: 8,
+  },
+  powerUpButtonDisabled: {
+    opacity: 0.4,
+  },
+  powerUpIcon: {
+    fontSize: 24,
+  },
+  powerUpCount: {
+    fontSize: 12,
+    fontWeight: 'bold',
+    color: '#FFF',
+    marginTop: 2,
+  },
+  powerUpCountEmpty: {
+    color: '#666',
+  },
+  powerUpActiveBadge: {
+    position: 'absolute',
+    bottom: -8,
+    backgroundColor: '#4CAF50',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 8,
+  },
+  powerUpActiveText: {
+    fontSize: 8,
+    fontWeight: 'bold',
+    color: '#FFF',
+  },
+  cancelPowerUp: {
+    marginBottom: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    backgroundColor: 'rgba(255, 100, 100, 0.3)',
+    borderRadius: 12,
+  },
+  cancelPowerUpText: {
+    fontSize: 12,
+    color: '#FF6B6B',
+    fontWeight: '600',
   },
   // Timer styles
   timerBadge: {
