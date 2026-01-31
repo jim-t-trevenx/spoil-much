@@ -7,6 +7,8 @@ import {
   TouchableOpacity,
   SafeAreaView,
   ScrollView,
+  Animated,
+  Easing,
 } from 'react-native';
 import { Board } from './components/Board';
 import { ScoreDisplay } from './components/ScoreDisplay';
@@ -41,6 +43,245 @@ const getObstacleIcon = (obstacle: string): string => {
 };
 
 // Power-Ups Bar Component - Bottom of game screen
+// Animated Power-Up Button Component
+function AnimatedPowerUpButton({
+  type,
+  info,
+  count,
+  isActive,
+  isDisabled,
+  onPress,
+}: {
+  type: InGamePowerUpType;
+  info: { icon: string; name: string };
+  count: number;
+  isActive: boolean;
+  isDisabled: boolean;
+  onPress: () => void;
+}) {
+  const pulseAnim = React.useRef(new Animated.Value(1)).current;
+  const glowAnim = React.useRef(new Animated.Value(0)).current;
+  const shimmerAnim = React.useRef(new Animated.Value(-1)).current;
+  const scaleAnim = React.useRef(new Animated.Value(1)).current;
+  const bounceAnim = React.useRef(new Animated.Value(0)).current;
+
+  // Continuous pulse animation for available power-ups
+  React.useEffect(() => {
+    if (count > 0 && !isDisabled) {
+      Animated.loop(
+        Animated.sequence([
+          Animated.timing(pulseAnim, {
+            toValue: 1.08,
+            duration: 800,
+            easing: Easing.inOut(Easing.ease),
+            useNativeDriver: true,
+          }),
+          Animated.timing(pulseAnim, {
+            toValue: 1,
+            duration: 800,
+            easing: Easing.inOut(Easing.ease),
+            useNativeDriver: true,
+          }),
+        ])
+      ).start();
+
+      // Glow animation
+      Animated.loop(
+        Animated.sequence([
+          Animated.timing(glowAnim, {
+            toValue: 1,
+            duration: 1200,
+            useNativeDriver: true,
+          }),
+          Animated.timing(glowAnim, {
+            toValue: 0,
+            duration: 1200,
+            useNativeDriver: true,
+          }),
+        ])
+      ).start();
+
+      // Shimmer animation
+      Animated.loop(
+        Animated.sequence([
+          Animated.timing(shimmerAnim, {
+            toValue: 1,
+            duration: 2000,
+            easing: Easing.linear,
+            useNativeDriver: true,
+          }),
+          Animated.delay(500),
+          Animated.timing(shimmerAnim, {
+            toValue: -1,
+            duration: 0,
+            useNativeDriver: true,
+          }),
+        ])
+      ).start();
+    }
+
+    return () => {
+      pulseAnim.stopAnimation();
+      glowAnim.stopAnimation();
+      shimmerAnim.stopAnimation();
+    };
+  }, [count, isDisabled]);
+
+  // Active state bounce animation
+  React.useEffect(() => {
+    if (isActive) {
+      Animated.loop(
+        Animated.sequence([
+          Animated.timing(bounceAnim, {
+            toValue: -4,
+            duration: 300,
+            easing: Easing.inOut(Easing.ease),
+            useNativeDriver: true,
+          }),
+          Animated.timing(bounceAnim, {
+            toValue: 0,
+            duration: 300,
+            easing: Easing.inOut(Easing.ease),
+            useNativeDriver: true,
+          }),
+        ])
+      ).start();
+    } else {
+      bounceAnim.stopAnimation();
+      bounceAnim.setValue(0);
+    }
+  }, [isActive]);
+
+  const handlePressIn = () => {
+    Animated.spring(scaleAnim, {
+      toValue: 0.9,
+      friction: 5,
+      tension: 200,
+      useNativeDriver: true,
+    }).start();
+  };
+
+  const handlePressOut = () => {
+    Animated.spring(scaleAnim, {
+      toValue: 1,
+      friction: 3,
+      tension: 100,
+      useNativeDriver: true,
+    }).start();
+  };
+
+  const glowColor = isActive ? '#4CAF50' : '#FFD700';
+
+  return (
+    <Animated.View
+      style={[
+        styles.powerUpButtonContainer,
+        {
+          transform: [
+            { scale: Animated.multiply(pulseAnim, scaleAnim) },
+            { translateY: bounceAnim },
+          ],
+        },
+      ]}
+    >
+      {/* Glow effect */}
+      {count > 0 && (
+        <Animated.View
+          style={[
+            styles.powerUpGlow,
+            {
+              backgroundColor: glowColor,
+              opacity: glowAnim.interpolate({
+                inputRange: [0, 1],
+                outputRange: [0.2, 0.5],
+              }),
+            },
+          ]}
+        />
+      )}
+
+      <TouchableOpacity
+        style={[
+          styles.powerUpButton,
+          isActive && styles.powerUpButtonActive,
+          count === 0 && styles.powerUpButtonDisabled,
+        ]}
+        onPress={onPress}
+        onPressIn={handlePressIn}
+        onPressOut={handlePressOut}
+        disabled={isDisabled}
+        activeOpacity={0.8}
+      >
+        {/* Shimmer effect */}
+        {count > 0 && (
+          <Animated.View
+            style={[
+              styles.powerUpShimmer,
+              {
+                transform: [
+                  {
+                    translateX: shimmerAnim.interpolate({
+                      inputRange: [-1, 1],
+                      outputRange: [-60, 60],
+                    }),
+                  },
+                ],
+              },
+            ]}
+          />
+        )}
+
+        <Animated.Text
+          style={[
+            styles.powerUpIcon,
+            {
+              transform: [
+                {
+                  scale: count > 0 ? pulseAnim.interpolate({
+                    inputRange: [1, 1.08],
+                    outputRange: [1, 1.15],
+                  }) : 1,
+                },
+              ],
+            },
+          ]}
+        >
+          {info.icon}
+        </Animated.Text>
+
+        <View style={styles.powerUpCountBadge}>
+          <Text style={[
+            styles.powerUpCount,
+            count === 0 && styles.powerUpCountEmpty,
+          ]}>
+            {count}
+          </Text>
+        </View>
+
+        {isActive && (
+          <Animated.View
+            style={[
+              styles.powerUpActiveBadge,
+              {
+                transform: [
+                  {
+                    scale: pulseAnim.interpolate({
+                      inputRange: [1, 1.08],
+                      outputRange: [1, 1.1],
+                    }),
+                  },
+                ],
+              },
+            ]}
+          >
+            <Text style={styles.powerUpActiveText}>TAP</Text>
+          </Animated.View>
+        )}
+      </TouchableOpacity>
+    </Animated.View>
+  );
+}
+
 function PowerUpsBar({
   gameMode,
   onUsePowerUp,
@@ -74,29 +315,15 @@ function PowerUpsBar({
           const isActive = activePowerUp === type;
 
           return (
-            <TouchableOpacity
+            <AnimatedPowerUpButton
               key={type}
-              style={[
-                styles.powerUpButton,
-                isActive && styles.powerUpButtonActive,
-                count === 0 && styles.powerUpButtonDisabled,
-              ]}
+              type={type}
+              info={info}
+              count={count}
+              isActive={isActive}
+              isDisabled={count === 0 || (activePowerUp !== null && !isActive)}
               onPress={() => count > 0 && onUsePowerUp(type)}
-              disabled={count === 0 || (activePowerUp !== null && !isActive)}
-            >
-              <Text style={styles.powerUpIcon}>{info.icon}</Text>
-              <Text style={[
-                styles.powerUpCount,
-                count === 0 && styles.powerUpCountEmpty,
-              ]}>
-                {count}
-              </Text>
-              {isActive && (
-                <View style={styles.powerUpActiveBadge}>
-                  <Text style={styles.powerUpActiveText}>TAP</Text>
-                </View>
-              )}
-            </TouchableOpacity>
+            />
           );
         })}
       </View>
@@ -1181,73 +1408,133 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     lineHeight: 22,
   },
-  // Power-Ups Bar styles
+  // Power-Ups Bar styles - Casino animated
   powerUpsBar: {
     marginTop: 16,
     alignItems: 'center',
   },
   powerUpsList: {
     flexDirection: 'row',
-    gap: 12,
-    backgroundColor: 'rgba(0, 0, 0, 0.4)',
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    borderRadius: 20,
+    gap: 16,
+    backgroundColor: 'rgba(0, 0, 0, 0.6)',
+    paddingVertical: 16,
+    paddingHorizontal: 20,
+    borderRadius: 24,
     borderWidth: 2,
-    borderColor: 'rgba(255, 255, 255, 0.1)',
+    borderColor: 'rgba(255, 215, 0, 0.3)',
+    shadowColor: '#FFD700',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+  },
+  powerUpButtonContainer: {
+    alignItems: 'center',
+  },
+  powerUpGlow: {
+    position: 'absolute',
+    top: -6,
+    left: -6,
+    right: -6,
+    bottom: -6,
+    borderRadius: 18,
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 1,
+    shadowRadius: 12,
   },
   powerUpButton: {
-    width: 56,
-    height: 56,
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
-    borderRadius: 12,
+    width: 60,
+    height: 60,
+    backgroundColor: 'rgba(30, 30, 60, 0.9)',
+    borderRadius: 14,
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 2,
-    borderColor: 'rgba(255, 255, 255, 0.2)',
+    borderColor: 'rgba(255, 215, 0, 0.4)',
+    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.5,
+    shadowRadius: 6,
   },
   powerUpButtonActive: {
-    backgroundColor: 'rgba(76, 175, 80, 0.3)',
+    backgroundColor: 'rgba(76, 175, 80, 0.4)',
     borderColor: '#4CAF50',
+    borderWidth: 3,
     shadowColor: '#4CAF50',
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.8,
-    shadowRadius: 8,
+    shadowOpacity: 1,
+    shadowRadius: 12,
   },
   powerUpButtonDisabled: {
-    opacity: 0.4,
+    opacity: 0.35,
+    borderColor: 'rgba(100, 100, 100, 0.3)',
+  },
+  powerUpShimmer: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    width: 30,
+    height: '100%',
+    backgroundColor: 'rgba(255, 255, 255, 0.25)',
+    transform: [{ skewX: '-20deg' }],
   },
   powerUpIcon: {
-    fontSize: 24,
+    fontSize: 28,
+    textShadowColor: 'rgba(255, 255, 255, 0.5)',
+    textShadowOffset: { width: 0, height: 0 },
+    textShadowRadius: 8,
+  },
+  powerUpCountBadge: {
+    position: 'absolute',
+    top: -4,
+    right: -4,
+    backgroundColor: '#FFD700',
+    borderRadius: 10,
+    minWidth: 20,
+    height: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: '#1a1a2e',
+    shadowColor: '#FFD700',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.6,
+    shadowRadius: 4,
   },
   powerUpCount: {
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: 'bold',
-    color: '#FFF',
-    marginTop: 2,
+    color: '#1a1a2e',
+    paddingHorizontal: 4,
   },
   powerUpCountEmpty: {
     color: '#666',
   },
   powerUpActiveBadge: {
     position: 'absolute',
-    bottom: -8,
+    bottom: -10,
     backgroundColor: '#4CAF50',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 10,
+    shadowColor: '#4CAF50',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.8,
+    shadowRadius: 4,
   },
   powerUpActiveText: {
-    fontSize: 8,
+    fontSize: 9,
     fontWeight: 'bold',
     color: '#FFF',
+    letterSpacing: 1,
   },
   cancelPowerUp: {
-    marginBottom: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    backgroundColor: 'rgba(255, 100, 100, 0.3)',
-    borderRadius: 12,
+    marginBottom: 10,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    backgroundColor: 'rgba(255, 80, 80, 0.4)',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 100, 100, 0.5)',
   },
   cancelPowerUpText: {
     fontSize: 12,
