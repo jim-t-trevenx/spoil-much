@@ -1,6 +1,8 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { Board, createInitialBoard, swapBlocks, areAdjacent, Difficulty, cloneBoard } from '../utils/boardUtils';
-import { GRID_SIZE } from '../utils/constants';
+import { GRID_SIZE, DEFAULT_MOVES, DEFAULT_TIME_LIMIT } from '../utils/constants';
+
+export type GameMode = 'classic' | 'arcade';
 import {
   findMatches,
   removeMatches,
@@ -62,14 +64,22 @@ const POWER_UP_DURATIONS = {
 type UseGameLogicOptions = {
   difficulty?: Difficulty;
   demoMode?: boolean;
-  timedMode?: boolean;
-  timeLimit?: number; // seconds
+  gameMode?: GameMode;
+  maxMoves?: number;
+  timeLimit?: number; // seconds for arcade mode
 };
 
 export const useGameLogic = (options: UseGameLogicOptions | Difficulty = 'medium') => {
   // Handle both old signature (difficulty only) and new signature (options object)
-  const { difficulty = 'medium', demoMode = false, timedMode = true, timeLimit = 60 } =
-    typeof options === 'string' ? { difficulty: options } : options;
+  const {
+    difficulty = 'medium',
+    demoMode = false,
+    gameMode = 'classic',
+    maxMoves = DEFAULT_MOVES,
+    timeLimit = DEFAULT_TIME_LIMIT,
+  } = typeof options === 'string' ? { difficulty: options } : options;
+
+  const isArcadeMode = gameMode === 'arcade';
   const [board, setBoard] = useState<Board>(() => createInitialBoard(difficulty));
   const [score, setScore] = useState(0);
   const [selectedBlock, setSelectedBlock] = useState<{ row: number; col: number } | null>(null);
@@ -92,14 +102,18 @@ export const useGameLogic = (options: UseGameLogicOptions | Difficulty = 'medium
     color: string;
   } | null>(null);
 
-  // Timer state
-  const [timeRemaining, setTimeRemaining] = useState(timedMode ? timeLimit : null);
+  // Timer state (arcade mode)
+  const [timeRemaining, setTimeRemaining] = useState(isArcadeMode ? timeLimit : null);
+
+  // Moves state (classic mode)
+  const [movesRemaining, setMovesRemaining] = useState(isArcadeMode ? null : maxMoves);
+
   const [isGameOver, setIsGameOver] = useState(false);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Start/manage countdown timer
+  // Start/manage countdown timer (arcade mode only)
   useEffect(() => {
-    if (!timedMode || demoMode || isGameOver) return;
+    if (!isArcadeMode || demoMode || isGameOver) return;
 
     timerRef.current = setInterval(() => {
       setTimeRemaining(prev => {
@@ -117,7 +131,7 @@ export const useGameLogic = (options: UseGameLogicOptions | Difficulty = 'medium
     return () => {
       if (timerRef.current) clearInterval(timerRef.current);
     };
-  }, [timedMode, demoMode, isGameOver]);
+  }, [isArcadeMode, demoMode, isGameOver]);
 
   const processMatchesRef = useRef<(() => void) | undefined>(undefined);
 
@@ -255,8 +269,13 @@ export const useGameLogic = (options: UseGameLogicOptions | Difficulty = 'medium
     } else {
       setCombo(0);
       setGameState('idle');
+
+      // Check for game over in classic mode (no moves remaining)
+      if (!isArcadeMode && movesRemaining !== null && movesRemaining <= 0) {
+        setIsGameOver(true);
+      }
     }
-  }, [board, combo]);
+  }, [board, combo, isArcadeMode, movesRemaining]);
 
   processMatchesRef.current = processMatches;
 
@@ -628,6 +647,19 @@ export const useGameLogic = (options: UseGameLogicOptions | Difficulty = 'medium
     (row1: number, col1: number, row2: number, col2: number) => {
       if (gameState !== 'idle' || isGameOver) return;
 
+      // Decrement moves in classic mode
+      if (!isArcadeMode && movesRemaining !== null) {
+        const newMoves = movesRemaining - 1;
+        setMovesRemaining(newMoves);
+
+        // Check for game over (no moves left)
+        // Note: Game over triggers after this swap completes if no matches
+        if (newMoves <= 0) {
+          // We'll check game over after the swap animation completes
+          // For now, allow the last move to play out
+        }
+      }
+
       setGameState('animating');
       setSwappingPair({
         from: { row: row1, col: col1 },
@@ -638,7 +670,7 @@ export const useGameLogic = (options: UseGameLogicOptions | Difficulty = 'medium
         to: { row: row2, col: col2 },
       });
     },
-    [gameState, isGameOver]
+    [gameState, isGameOver, isArcadeMode, movesRemaining]
   );
 
   const handleSwipe = useCallback(
@@ -681,12 +713,17 @@ export const useGameLogic = (options: UseGameLogicOptions | Difficulty = 'medium
     setPendingSwap(null);
     setExplodingBlocks([]);
     setPowerUpActivations({ rockets: [], rainbows: [], bombs: [], propellers: [], combos: [] });
-    // Reset timer
-    if (timedMode) {
+    setIsGameOver(false);
+
+    // Reset timer or moves based on game mode
+    if (isArcadeMode) {
       setTimeRemaining(timeLimit);
-      setIsGameOver(false);
+      setMovesRemaining(null);
+    } else {
+      setTimeRemaining(null);
+      setMovesRemaining(maxMoves);
     }
-  }, [difficulty, timedMode, timeLimit]);
+  }, [difficulty, isArcadeMode, timeLimit, maxMoves]);
 
   // Demo mode: automatically make moves
   useDemoMode({
@@ -706,7 +743,9 @@ export const useGameLogic = (options: UseGameLogicOptions | Difficulty = 'medium
     explodingBlocks,
     powerUpActivations,
     demoMode,
+    gameMode,
     timeRemaining,
+    movesRemaining,
     isGameOver,
     handleBlockPress,
     handleSwipe,

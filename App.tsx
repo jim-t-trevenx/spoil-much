@@ -9,7 +9,7 @@ import {
 } from 'react-native';
 import { Board } from './components/Board';
 import { ScoreDisplay } from './components/ScoreDisplay';
-import { useGameLogic } from './hooks/useGameLogic';
+import { useGameLogic, GameMode } from './hooks/useGameLogic';
 import { useHighScores, HighScore } from './hooks/useHighScores';
 import { Difficulty } from './utils/boardUtils';
 
@@ -20,7 +20,7 @@ function HomeScreen({
   onDemo,
   highScores,
 }: {
-  onPlay: (difficulty: Difficulty) => void;
+  onPlay: (difficulty: Difficulty, gameMode: GameMode) => void;
   onDemo: () => void;
   highScores: HighScore[];
 }) {
@@ -29,21 +29,34 @@ function HomeScreen({
       <Text style={styles.title}>SPOIL MUCH</Text>
       <Text style={styles.subtitle}>A Match-3 Puzzle Game</Text>
 
-      <Text style={styles.modeLabel}>SELECT MODE</Text>
+      <Text style={styles.modeLabel}>CLASSIC MODE</Text>
+      <Text style={styles.modeSubLabel}>Complete levels with limited moves</Text>
       <View style={styles.modeButtons}>
         <TouchableOpacity
           style={[styles.modeButton, styles.easyButton]}
-          onPress={() => onPlay('easy')}
+          onPress={() => onPlay('easy', 'classic')}
         >
           <Text style={styles.modeButtonText}>EASY</Text>
           <Text style={styles.modeDescription}>Start with rockets</Text>
         </TouchableOpacity>
         <TouchableOpacity
           style={[styles.modeButton, styles.mediumButton]}
-          onPress={() => onPlay('medium')}
+          onPress={() => onPlay('medium', 'classic')}
         >
           <Text style={styles.modeButtonText}>MEDIUM</Text>
-          <Text style={styles.modeDescription}>Classic mode</Text>
+          <Text style={styles.modeDescription}>No power-ups</Text>
+        </TouchableOpacity>
+      </View>
+
+      <Text style={[styles.modeLabel, { marginTop: 24 }]}>ARCADE MODE</Text>
+      <Text style={styles.modeSubLabel}>Race against the clock</Text>
+      <View style={styles.modeButtons}>
+        <TouchableOpacity
+          style={[styles.modeButton, styles.arcadeButton]}
+          onPress={() => onPlay('easy', 'arcade')}
+        >
+          <Text style={styles.modeButtonText}>60 SEC</Text>
+          <Text style={styles.modeDescription}>Timed challenge</Text>
         </TouchableOpacity>
       </View>
 
@@ -72,11 +85,13 @@ function GameScreen({
   onBack,
   onSaveScore,
   difficulty,
+  gameMode = 'classic',
   demoMode = false,
 }: {
   onBack: () => void;
   onSaveScore: (score: number) => void;
   difficulty: Difficulty;
+  gameMode?: GameMode;
   demoMode?: boolean;
 }) {
   const {
@@ -88,12 +103,13 @@ function GameScreen({
     explodingBlocks,
     powerUpActivations,
     timeRemaining,
+    movesRemaining,
     isGameOver,
     handleBlockPress,
     handleSwipe,
     handleSwapAnimationComplete,
     resetGame,
-  } = useGameLogic({ difficulty, demoMode });
+  } = useGameLogic({ difficulty, demoMode, gameMode });
 
   const handleBack = () => {
     if (!demoMode && score > 0) {
@@ -134,11 +150,20 @@ function GameScreen({
           <Text style={styles.backButtonText}>{demoMode ? '← Exit Demo' : '← Back'}</Text>
         </TouchableOpacity>
 
-        {/* Timer Display */}
-        {!demoMode && timeRemaining !== null && (
+        {/* Timer Display (Arcade Mode) */}
+        {!demoMode && gameMode === 'arcade' && timeRemaining !== null && (
           <View style={[styles.timerBadge, timeRemaining <= 10 && styles.timerWarning]}>
             <Text style={[styles.timerText, timeRemaining <= 10 && styles.timerTextWarning]}>
               {formatTime(timeRemaining)}
+            </Text>
+          </View>
+        )}
+
+        {/* Moves Display (Classic Mode) */}
+        {!demoMode && gameMode === 'classic' && movesRemaining !== null && (
+          <View style={[styles.movesBadge, movesRemaining <= 5 && styles.movesWarning]}>
+            <Text style={[styles.movesText, movesRemaining <= 5 && styles.movesTextWarning]}>
+              {movesRemaining} moves
             </Text>
           </View>
         )}
@@ -181,7 +206,9 @@ function GameScreen({
       {isGameOver && (
         <View style={styles.gameOverOverlay}>
           <View style={styles.gameOverModal}>
-            <Text style={styles.gameOverTitle}>TIME'S UP!</Text>
+            <Text style={styles.gameOverTitle}>
+              {gameMode === 'arcade' ? "TIME'S UP!" : 'NO MOVES LEFT!'}
+            </Text>
             <Text style={styles.gameOverScore}>Final Score</Text>
             <Text style={styles.gameOverScoreValue}>{score.toLocaleString()}</Text>
             <View style={styles.gameOverButtons}>
@@ -202,6 +229,7 @@ function GameScreen({
 export default function App() {
   const [screen, setScreen] = useState<Screen>('home');
   const [difficulty, setDifficulty] = useState<Difficulty>('medium');
+  const [gameMode, setGameMode] = useState<GameMode>('classic');
   const [demoMode, setDemoMode] = useState(false);
   const [gameKey, setGameKey] = useState(0);
   const { highScores, saveHighScore } = useHighScores();
@@ -210,8 +238,9 @@ export default function App() {
     await saveHighScore(score);
   };
 
-  const handlePlay = (selectedDifficulty: Difficulty) => {
+  const handlePlay = (selectedDifficulty: Difficulty, selectedGameMode: GameMode) => {
     setDifficulty(selectedDifficulty);
+    setGameMode(selectedGameMode);
     setDemoMode(false);
     setGameKey(prev => prev + 1);
     setScreen('game');
@@ -219,6 +248,7 @@ export default function App() {
 
   const handleDemo = () => {
     setDifficulty('easy');
+    setGameMode('arcade');
     setDemoMode(true);
     setGameKey(prev => prev + 1);
     setScreen('game');
@@ -240,6 +270,7 @@ export default function App() {
           onBack={handleBack}
           onSaveScore={handleSaveScore}
           difficulty={difficulty}
+          gameMode={gameMode}
           demoMode={demoMode}
         />
       )}
@@ -273,8 +304,13 @@ const styles = StyleSheet.create({
   modeLabel: {
     fontSize: 14,
     color: '#888',
-    marginBottom: 16,
+    marginBottom: 4,
     letterSpacing: 2,
+  },
+  modeSubLabel: {
+    fontSize: 12,
+    color: '#666',
+    marginBottom: 12,
   },
   modeButtons: {
     flexDirection: 'row',
@@ -299,6 +335,10 @@ const styles = StyleSheet.create({
   mediumButton: {
     backgroundColor: '#0066FF',
     shadowColor: '#0066FF',
+  },
+  arcadeButton: {
+    backgroundColor: '#FF6600',
+    shadowColor: '#FF6600',
   },
   demoButton: {
     backgroundColor: 'rgba(255, 255, 255, 0.1)',
@@ -447,6 +487,27 @@ const styles = StyleSheet.create({
   },
   timerTextWarning: {
     color: '#FF3232',
+  },
+  // Moves counter styles
+  movesBadge: {
+    backgroundColor: 'rgba(100, 100, 255, 0.2)',
+    paddingHorizontal: 16,
+    paddingVertical: 6,
+    borderRadius: 20,
+    borderWidth: 2,
+    borderColor: 'rgba(100, 100, 255, 0.4)',
+  },
+  movesWarning: {
+    backgroundColor: 'rgba(255, 150, 50, 0.3)',
+    borderColor: '#FF9632',
+  },
+  movesText: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#FFF',
+  },
+  movesTextWarning: {
+    color: '#FF9632',
   },
   // Game Over styles
   gameOverOverlay: {
