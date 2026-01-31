@@ -12,6 +12,7 @@ import { Board } from './components/Board';
 import { ScoreDisplay } from './components/ScoreDisplay';
 import { useGameLogic, GameMode } from './hooks/useGameLogic';
 import { useHighScores, HighScore } from './hooks/useHighScores';
+import { useProgress, useLives, calculateStars } from './hooks/useProgress';
 import { Difficulty } from './utils/boardUtils';
 import { LevelConfig, ObjectiveProgress, getObjectiveText, getColorName } from './types/level';
 import { COLORS } from './utils/constants';
@@ -156,18 +157,24 @@ function GameScreen({
   onBack,
   onSaveScore,
   onNextLevel,
+  onLevelComplete,
+  onLevelFailed,
   difficulty,
   gameMode = 'classic',
   demoMode = false,
   levelConfig,
+  hasLives = true,
 }: {
   onBack: () => void;
   onSaveScore: (score: number) => void;
   onNextLevel?: () => void;
+  onLevelComplete?: (levelId: number, score: number, movesUsed: number, maxMoves: number) => void;
+  onLevelFailed?: () => void;
   difficulty: Difficulty;
   gameMode?: GameMode;
   demoMode?: boolean;
   levelConfig?: LevelConfig;
+  hasLives?: boolean;
 }) {
   const {
     board,
@@ -218,12 +225,27 @@ function GameScreen({
   };
 
   const handleNextLevel = () => {
-    onSaveScore(score);
+    // Save level completion with stars
+    if (levelConfig && onLevelComplete) {
+      const movesUsed = (levelConfig.moves || 20) - (movesRemaining || 0);
+      onLevelComplete(levelConfig.id, score, movesUsed, levelConfig.moves || 20);
+    } else {
+      onSaveScore(score);
+    }
+
     if (onNextLevel) {
       onNextLevel();
     } else {
       resetGame();
     }
+  };
+
+  const handleGameOverPlayAgain = () => {
+    if (onLevelFailed) {
+      onLevelFailed();
+    }
+    onSaveScore(score);
+    resetGame();
   };
 
   // Format time as MM:SS
@@ -308,7 +330,7 @@ function GameScreen({
             <Text style={styles.gameOverScore}>Final Score</Text>
             <Text style={styles.gameOverScoreValue}>{score.toLocaleString()}</Text>
             <View style={styles.gameOverButtons}>
-              <TouchableOpacity style={styles.gameOverButton} onPress={handlePlayAgain}>
+              <TouchableOpacity style={styles.gameOverButton} onPress={handleGameOverPlayAgain}>
                 <Text style={styles.gameOverButtonText}>PLAY AGAIN</Text>
               </TouchableOpacity>
               <TouchableOpacity style={[styles.gameOverButton, styles.gameOverButtonSecondary]} onPress={handleGameOverBack}>
@@ -346,16 +368,47 @@ function GameScreen({
   );
 }
 
+// Stars Display Component
+function StarsDisplay({ stars, size = 12 }: { stars: number; size?: number }) {
+  return (
+    <View style={styles.starsContainer}>
+      {[1, 2, 3].map(i => (
+        <Text
+          key={i}
+          style={[
+            styles.star,
+            { fontSize: size },
+            i <= stars ? styles.starFilled : styles.starEmpty,
+          ]}
+        >
+          ★
+        </Text>
+      ))}
+    </View>
+  );
+}
+
 // Levels Screen Component
 function LevelsScreen({
   onSelectLevel,
   onBack,
+  isLevelUnlocked,
+  getLevelProgress,
+  totalStars,
+  coins,
+  lives,
+  getTimeUntilNextLife,
 }: {
   onSelectLevel: (levelId: number) => void;
   onBack: () => void;
+  isLevelUnlocked: (id: number) => boolean;
+  getLevelProgress: (id: number) => { stars: number; completed: boolean } | undefined;
+  totalStars: number;
+  coins: number;
+  lives: { current: number; max: number };
+  getTimeUntilNextLife: () => number | null;
 }) {
-  const totalLevels = getTotalLevelCount();
-  const levelButtons = Array.from({ length: totalLevels }, (_, i) => i + 1);
+  const timeUntilLife = getTimeUntilNextLife();
 
   return (
     <View style={styles.levelsContainer}>
@@ -367,6 +420,27 @@ function LevelsScreen({
         <View style={styles.backButton} />
       </View>
 
+      {/* Stats Bar */}
+      <View style={styles.statsBar}>
+        <View style={styles.statItem}>
+          <Text style={styles.statIcon}>★</Text>
+          <Text style={styles.statValue}>{totalStars}</Text>
+        </View>
+        <View style={styles.statItem}>
+          <Text style={styles.statIcon}>🪙</Text>
+          <Text style={styles.statValue}>{coins}</Text>
+        </View>
+        <View style={styles.statItem}>
+          <Text style={styles.statIcon}>❤️</Text>
+          <Text style={styles.statValue}>
+            {lives.current}/{lives.max}
+            {timeUntilLife !== null && lives.current < lives.max && (
+              <Text style={styles.statTimer}> ({timeUntilLife}m)</Text>
+            )}
+          </Text>
+        </View>
+      </View>
+
       <ScrollView contentContainerStyle={styles.levelsGrid}>
         {WORLDS.map(world => (
           <View key={world.id} style={styles.worldSection}>
@@ -374,17 +448,29 @@ function LevelsScreen({
             <View style={styles.worldLevels}>
               {world.levels.map(levelId => {
                 const level = getLevel(levelId);
+                const unlocked = isLevelUnlocked(levelId);
+                const progress = getLevelProgress(levelId);
+
                 return (
                   <TouchableOpacity
                     key={levelId}
-                    style={styles.levelButton}
-                    onPress={() => onSelectLevel(levelId)}
+                    style={[
+                      styles.levelButton,
+                      !unlocked && styles.levelButtonLocked,
+                      progress?.completed && styles.levelButtonCompleted,
+                    ]}
+                    onPress={() => unlocked && onSelectLevel(levelId)}
+                    disabled={!unlocked}
                   >
-                    <Text style={styles.levelNumber}>{levelId}</Text>
-                    {level?.name && (
-                      <Text style={styles.levelName} numberOfLines={1}>
-                        {level.name}
-                      </Text>
+                    {unlocked ? (
+                      <>
+                        <Text style={styles.levelNumber}>{levelId}</Text>
+                        {progress && progress.stars > 0 && (
+                          <StarsDisplay stars={progress.stars} size={10} />
+                        )}
+                      </>
+                    ) : (
+                      <Text style={styles.lockIcon}>🔒</Text>
                     )}
                   </TouchableOpacity>
                 );
@@ -406,9 +492,37 @@ export default function App() {
   const [currentLevelId, setCurrentLevelId] = useState<number>(1);
   const [currentLevel, setCurrentLevel] = useState<LevelConfig | undefined>(undefined);
   const { highScores, saveHighScore } = useHighScores();
+  const {
+    progress,
+    completeLevel,
+    isLevelUnlocked,
+    getLevelProgress,
+  } = useProgress();
+  const {
+    lives,
+    loseLife,
+    hasLives,
+    getTimeUntilNextLife,
+  } = useLives();
 
   const handleSaveScore = async (score: number) => {
     await saveHighScore(score);
+  };
+
+  const handleLevelComplete = async (
+    levelId: number,
+    score: number,
+    movesUsed: number,
+    maxMoves: number
+  ) => {
+    const stars = calculateStars(movesUsed, maxMoves, score, true);
+    const movesRemaining = maxMoves - movesUsed;
+    await completeLevel(levelId, stars, score, movesRemaining);
+    await saveHighScore(score);
+  };
+
+  const handleLevelFailed = async () => {
+    await loseLife();
   };
 
   const handlePlay = (selectedDifficulty: Difficulty, selectedGameMode: GameMode) => {
@@ -470,7 +584,16 @@ export default function App() {
         <HomeScreen onPlay={handlePlay} onDemo={handleDemo} highScores={highScores} />
       )}
       {screen === 'levels' && (
-        <LevelsScreen onSelectLevel={handleSelectLevel} onBack={handleBack} />
+        <LevelsScreen
+          onSelectLevel={handleSelectLevel}
+          onBack={handleBack}
+          isLevelUnlocked={isLevelUnlocked}
+          getLevelProgress={getLevelProgress}
+          totalStars={progress.totalStars}
+          coins={progress.coins}
+          lives={lives}
+          getTimeUntilNextLife={getTimeUntilNextLife}
+        />
       )}
       {screen === 'game' && (
         <GameScreen
@@ -478,10 +601,13 @@ export default function App() {
           onBack={gameMode === 'classic' ? handleBackToLevels : handleBack}
           onSaveScore={handleSaveScore}
           onNextLevel={handleNextLevel}
+          onLevelComplete={handleLevelComplete}
+          onLevelFailed={handleLevelFailed}
           difficulty={difficulty}
           gameMode={gameMode}
           demoMode={demoMode}
           levelConfig={currentLevel}
+          hasLives={hasLives}
         />
       )}
     </SafeAreaView>
@@ -923,5 +1049,59 @@ const styles = StyleSheet.create({
     fontSize: 8,
     color: '#AAA',
     marginTop: 2,
+  },
+  levelButtonLocked: {
+    backgroundColor: 'rgba(50, 50, 50, 0.5)',
+    borderColor: 'rgba(100, 100, 100, 0.3)',
+  },
+  levelButtonCompleted: {
+    backgroundColor: 'rgba(76, 175, 80, 0.2)',
+    borderColor: 'rgba(76, 175, 80, 0.5)',
+  },
+  lockIcon: {
+    fontSize: 24,
+  },
+  // Stars styles
+  starsContainer: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    marginTop: 2,
+  },
+  star: {
+    marginHorizontal: 1,
+  },
+  starFilled: {
+    color: '#FFD700',
+  },
+  starEmpty: {
+    color: '#444',
+  },
+  // Stats bar
+  statsBar: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    backgroundColor: 'rgba(0, 0, 0, 0.3)',
+    marginHorizontal: 20,
+    borderRadius: 12,
+    marginBottom: 16,
+  },
+  statItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  statIcon: {
+    fontSize: 18,
+    marginRight: 6,
+  },
+  statValue: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#FFF',
+  },
+  statTimer: {
+    fontSize: 12,
+    color: '#AAA',
   },
 });
