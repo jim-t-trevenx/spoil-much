@@ -19,6 +19,12 @@ import { Difficulty } from './utils/boardUtils';
 import { LevelConfig, ObjectiveProgress, getObjectiveText, getColorName } from './types/level';
 import { COLORS } from './utils/constants';
 import { getLevel, getNextLevelId, WORLDS, getTotalLevelCount } from './data/levels';
+// Casino-style effects
+import { Celebration } from './components/Celebration';
+import { StarAnimation } from './components/StarAnimation';
+import { ScreenShake, ScreenFlash, useScreenEffects } from './components/ScreenEffects';
+import { AnimatedBackground } from './components/AnimatedBackground';
+import { GlowButton } from './components/GlowButton';
 
 type Screen = 'home' | 'game' | 'levels' | 'pre-level';
 
@@ -99,59 +105,66 @@ function HomeScreen({
   highScores: HighScore[];
 }) {
   return (
-    <View style={styles.homeContainer}>
-      <Text style={styles.title}>SPOIL MUCH</Text>
-      <Text style={styles.subtitle}>A Match-3 Puzzle Game</Text>
+    <AnimatedBackground particlesEnabled gradientEnabled>
+      <View style={styles.homeContainer}>
+        <Text style={styles.title}>SPOIL MUCH</Text>
+        <Text style={styles.subtitle}>A Match-3 Puzzle Game</Text>
 
-      <Text style={styles.modeLabel}>CLASSIC MODE</Text>
-      <Text style={styles.modeSubLabel}>Complete levels with limited moves</Text>
-      <View style={styles.modeButtons}>
-        <TouchableOpacity
-          style={[styles.modeButton, styles.easyButton]}
-          onPress={() => onPlay('easy', 'classic')}
-        >
-          <Text style={styles.modeButtonText}>EASY</Text>
-          <Text style={styles.modeDescription}>Start with rockets</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.modeButton, styles.mediumButton]}
-          onPress={() => onPlay('medium', 'classic')}
-        >
-          <Text style={styles.modeButtonText}>MEDIUM</Text>
-          <Text style={styles.modeDescription}>No power-ups</Text>
-        </TouchableOpacity>
-      </View>
-
-      <Text style={[styles.modeLabel, { marginTop: 24 }]}>ARCADE MODE</Text>
-      <Text style={styles.modeSubLabel}>Race against the clock</Text>
-      <View style={styles.modeButtons}>
-        <TouchableOpacity
-          style={[styles.modeButton, styles.arcadeButton]}
-          onPress={() => onPlay('easy', 'arcade')}
-        >
-          <Text style={styles.modeButtonText}>60 SEC</Text>
-          <Text style={styles.modeDescription}>Timed challenge</Text>
-        </TouchableOpacity>
-      </View>
-
-      <TouchableOpacity style={styles.demoButton} onPress={onDemo}>
-        <Text style={styles.demoButtonText}>WATCH DEMO</Text>
-        <Text style={styles.demoDescription}>See the game play itself</Text>
-      </TouchableOpacity>
-
-      {highScores.length > 0 && (
-        <View style={styles.highScoresContainer}>
-          <Text style={styles.highScoresTitle}>TOP 5 HIGH SCORES</Text>
-          {highScores.map((entry, index) => (
-            <View key={index} style={styles.scoreRow}>
-              <Text style={styles.scoreRank}>#{index + 1}</Text>
-              <Text style={styles.scoreValue}>{entry.score.toLocaleString()}</Text>
-              <Text style={styles.scoreDate}>{entry.date}</Text>
-            </View>
-          ))}
+        <Text style={styles.modeLabel}>CLASSIC MODE</Text>
+        <Text style={styles.modeSubLabel}>Complete levels with limited moves</Text>
+        <View style={styles.modeButtons}>
+          <GlowButton
+            title="EASY"
+            subtitle="Start with rockets"
+            onPress={() => onPlay('easy', 'classic')}
+            color="#00CC00"
+            size="medium"
+          />
+          <GlowButton
+            title="MEDIUM"
+            subtitle="No power-ups"
+            onPress={() => onPlay('medium', 'classic')}
+            color="#0066FF"
+            size="medium"
+          />
         </View>
-      )}
-    </View>
+
+        <Text style={[styles.modeLabel, { marginTop: 24 }]}>ARCADE MODE</Text>
+        <Text style={styles.modeSubLabel}>Race against the clock</Text>
+        <View style={styles.modeButtons}>
+          <GlowButton
+            title="60 SEC"
+            subtitle="Timed challenge"
+            onPress={() => onPlay('easy', 'arcade')}
+            color="#FF6600"
+            size="medium"
+          />
+        </View>
+
+        <GlowButton
+          title="WATCH DEMO"
+          subtitle="See the game play itself"
+          onPress={onDemo}
+          variant="secondary"
+          size="medium"
+          shimmer={false}
+          pulse={false}
+        />
+
+        {highScores.length > 0 && (
+          <View style={styles.highScoresContainer}>
+            <Text style={styles.highScoresTitle}>TOP 5 HIGH SCORES</Text>
+            {highScores.map((entry, index) => (
+              <View key={index} style={styles.scoreRow}>
+                <Text style={styles.scoreRank}>#{index + 1}</Text>
+                <Text style={styles.scoreValue}>{entry.score.toLocaleString()}</Text>
+                <Text style={styles.scoreDate}>{entry.date}</Text>
+              </View>
+            ))}
+          </View>
+        )}
+      </View>
+    </AnimatedBackground>
   );
 }
 
@@ -241,9 +254,12 @@ function PreLevelScreen({
           })}
         </View>
 
-        <TouchableOpacity style={styles.startButton} onPress={onStart}>
-          <Text style={styles.startButtonText}>PLAY</Text>
-        </TouchableOpacity>
+        <GlowButton
+          title="PLAY"
+          onPress={onStart}
+          variant="gold"
+          size="large"
+        />
       </View>
     </View>
   );
@@ -296,6 +312,46 @@ function GameScreen({
     handleSwapAnimationComplete,
     resetGame,
   } = useGameLogic({ difficulty, demoMode, gameMode, levelConfig });
+
+  // Casino effects
+  const [showCelebration, setShowCelebration] = useState(false);
+  const [showStarAnimation, setShowStarAnimation] = useState(false);
+  const [earnedStars, setEarnedStars] = useState(0);
+  const {
+    shakeTrigger,
+    shakeIntensity,
+    flashTrigger,
+    flashColor,
+    triggerShake,
+    triggerFlash,
+    triggerComboEffect,
+  } = useScreenEffects();
+
+  // Trigger screen effects on high combos
+  React.useEffect(() => {
+    if (combo >= 5) {
+      triggerComboEffect(combo);
+    }
+  }, [combo, triggerComboEffect]);
+
+  // Trigger celebration on level complete
+  React.useEffect(() => {
+    if (isLevelComplete) {
+      // Calculate stars for display
+      if (levelConfig) {
+        const movesUsed = (levelConfig.moves || 20) - (movesRemaining || 0);
+        const stars = calculateStars(movesUsed, levelConfig.moves || 20, score, true);
+        setEarnedStars(stars);
+      } else {
+        setEarnedStars(3);
+      }
+      setShowCelebration(true);
+      setShowStarAnimation(true);
+    } else {
+      setShowCelebration(false);
+      setShowStarAnimation(false);
+    }
+  }, [isLevelComplete, levelConfig, movesRemaining, score]);
 
   // Demo mode: auto-advance on level complete, auto-restart on fail
   React.useEffect(() => {
@@ -384,122 +440,150 @@ function GameScreen({
   };
 
   return (
-    <View style={styles.gameContainer}>
-      <View style={styles.header}>
-        <TouchableOpacity style={styles.backButton} onPress={handleBack}>
-          <Text style={styles.backButtonText}>{demoMode ? '← Exit Demo' : '← Back'}</Text>
-        </TouchableOpacity>
+    <ScreenShake trigger={shakeTrigger} intensity={shakeIntensity}>
+      <AnimatedBackground combo={combo} particlesEnabled gradientEnabled={false}>
+        <View style={styles.gameContainer}>
+          <View style={styles.header}>
+            <TouchableOpacity style={styles.backButton} onPress={handleBack}>
+              <Text style={styles.backButtonText}>{demoMode ? '← Exit Demo' : '← Back'}</Text>
+            </TouchableOpacity>
 
-        {/* Timer Display (Arcade Mode) */}
-        {!demoMode && gameMode === 'arcade' && timeRemaining !== null && (
-          <View style={[styles.timerBadge, timeRemaining <= 10 && styles.timerWarning]}>
-            <Text style={[styles.timerText, timeRemaining <= 10 && styles.timerTextWarning]}>
-              {formatTime(timeRemaining)}
-            </Text>
-          </View>
-        )}
-
-        {/* Moves Display (Classic Mode) */}
-        {!demoMode && gameMode === 'classic' && movesRemaining !== null && (
-          <View style={[styles.movesBadge, movesRemaining <= 5 && styles.movesWarning]}>
-            <Text style={[styles.movesText, movesRemaining <= 5 && styles.movesTextWarning]}>
-              {movesRemaining} moves
-            </Text>
-          </View>
-        )}
-
-        {demoMode && (
-          <View style={[styles.difficultyBadge, styles.demoBadge]}>
-            <Text style={styles.difficultyText}>DEMO</Text>
-          </View>
-        )}
-
-        {!demoMode && (
-          <TouchableOpacity style={styles.resetButton} onPress={handleReset}>
-            <Text style={styles.resetButtonText}>Reset</Text>
-          </TouchableOpacity>
-        )}
-        {demoMode && <View style={styles.resetButton} />}
-      </View>
-
-      <ScoreDisplay score={score} combo={combo} />
-
-      {/* Objectives Panel */}
-      {objectiveProgress.length > 0 && (
-        <ObjectivesPanel objectives={objectiveProgress} />
-      )}
-
-      <Board
-        board={board}
-        selectedBlock={selectedBlock}
-        swappingPair={swappingPair}
-        explodingBlocks={explodingBlocks}
-        powerUpActivations={powerUpActivations}
-        demoMode={demoMode}
-        onBlockPress={handleBlockPress}
-        onSwipe={handleSwipe}
-        onSwapAnimationComplete={handleSwapAnimationComplete}
-      />
-
-      <Text style={styles.instructions}>
-        {demoMode
-          ? 'Watching AI play automatically.\nTap "Exit Demo" to return home.'
-          : 'Swipe blocks to swap them.\nMatch 3 or more of the same color!'}
-      </Text>
-
-      {/* Game Over Overlay */}
-      {isGameOver && !isLevelComplete && (
-        <View style={styles.gameOverOverlay}>
-          <View style={styles.gameOverModal}>
-            <Text style={styles.gameOverTitle}>
-              {gameMode === 'arcade' ? "TIME'S UP!" : 'NO MOVES LEFT!'}
-            </Text>
-            <Text style={styles.gameOverScore}>Final Score</Text>
-            <Text style={styles.gameOverScoreValue}>{score.toLocaleString()}</Text>
-            {demoMode ? (
-              <Text style={styles.demoAutoText}>Restarting...</Text>
-            ) : (
-              <View style={styles.gameOverButtons}>
-                <TouchableOpacity style={styles.gameOverButton} onPress={handleGameOverPlayAgain}>
-                  <Text style={styles.gameOverButtonText}>PLAY AGAIN</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={[styles.gameOverButton, styles.gameOverButtonSecondary]} onPress={handleGameOverBack}>
-                  <Text style={styles.gameOverButtonTextSecondary}>HOME</Text>
-                </TouchableOpacity>
+            {/* Timer Display (Arcade Mode) */}
+            {!demoMode && gameMode === 'arcade' && timeRemaining !== null && (
+              <View style={[styles.timerBadge, timeRemaining <= 10 && styles.timerWarning]}>
+                <Text style={[styles.timerText, timeRemaining <= 10 && styles.timerTextWarning]}>
+                  {formatTime(timeRemaining)}
+                </Text>
               </View>
             )}
-          </View>
-        </View>
-      )}
 
-      {/* Level Complete Overlay */}
-      {isLevelComplete && (
-        <View style={styles.gameOverOverlay}>
-          <View style={[styles.gameOverModal, styles.levelCompleteModal]}>
-            <Text style={styles.levelCompleteTitle}>LEVEL COMPLETE!</Text>
-            <Text style={styles.gameOverScore}>Score</Text>
-            <Text style={styles.gameOverScoreValue}>{score.toLocaleString()}</Text>
-            {movesRemaining !== null && movesRemaining > 0 && (
-              <Text style={styles.movesBonus}>
-                +{movesRemaining} moves remaining!
-              </Text>
-            )}
-            {demoMode ? (
-              <Text style={styles.demoAutoText}>Next level...</Text>
-            ) : (
-              <View style={styles.gameOverButtons}>
-                <TouchableOpacity style={[styles.gameOverButton, styles.nextLevelButton]} onPress={handleNextLevel}>
-                  <Text style={styles.gameOverButtonText}>NEXT LEVEL</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={[styles.gameOverButton, styles.gameOverButtonSecondary]} onPress={handleLevelCompleteBack}>
-                  <Text style={styles.gameOverButtonTextSecondary}>HOME</Text>
-                </TouchableOpacity>
+            {/* Moves Display (Classic Mode) */}
+            {!demoMode && gameMode === 'classic' && movesRemaining !== null && (
+              <View style={[styles.movesBadge, movesRemaining <= 5 && styles.movesWarning]}>
+                <Text style={[styles.movesText, movesRemaining <= 5 && styles.movesTextWarning]}>
+                  {movesRemaining} moves
+                </Text>
               </View>
             )}
+
+            {demoMode && (
+              <View style={[styles.difficultyBadge, styles.demoBadge]}>
+                <Text style={styles.difficultyText}>DEMO</Text>
+              </View>
+            )}
+
+            {!demoMode && (
+              <TouchableOpacity style={styles.resetButton} onPress={handleReset}>
+                <Text style={styles.resetButtonText}>Reset</Text>
+              </TouchableOpacity>
+            )}
+            {demoMode && <View style={styles.resetButton} />}
           </View>
+
+          <ScoreDisplay score={score} combo={combo} />
+
+          {/* Objectives Panel */}
+          {objectiveProgress.length > 0 && (
+            <ObjectivesPanel objectives={objectiveProgress} />
+          )}
+
+          <Board
+            board={board}
+            selectedBlock={selectedBlock}
+            swappingPair={swappingPair}
+            explodingBlocks={explodingBlocks}
+            powerUpActivations={powerUpActivations}
+            demoMode={demoMode}
+            onBlockPress={handleBlockPress}
+            onSwipe={handleSwipe}
+            onSwapAnimationComplete={handleSwapAnimationComplete}
+          />
+
+          <Text style={styles.instructions}>
+            {demoMode
+              ? 'Watching AI play automatically.\nTap "Exit Demo" to return home.'
+              : 'Swipe blocks to swap them.\nMatch 3 or more of the same color!'}
+          </Text>
+
+          {/* Game Over Overlay */}
+          {isGameOver && !isLevelComplete && (
+            <View style={styles.gameOverOverlay}>
+              <View style={styles.gameOverModal}>
+                <Text style={styles.gameOverTitle}>
+                  {gameMode === 'arcade' ? "TIME'S UP!" : 'NO MOVES LEFT!'}
+                </Text>
+                <Text style={styles.gameOverScore}>Final Score</Text>
+                <Text style={styles.gameOverScoreValue}>{score.toLocaleString()}</Text>
+                {demoMode ? (
+                  <Text style={styles.demoAutoText}>Restarting...</Text>
+                ) : (
+                  <View style={styles.gameOverButtons}>
+                    <GlowButton
+                      title="PLAY AGAIN"
+                      onPress={handleGameOverPlayAgain}
+                      color="#4CAF50"
+                      size="medium"
+                    />
+                    <GlowButton
+                      title="HOME"
+                      onPress={handleGameOverBack}
+                      variant="secondary"
+                      size="medium"
+                      shimmer={false}
+                    />
+                  </View>
+                )}
+              </View>
+            </View>
+          )}
+
+          {/* Level Complete Overlay with Celebration */}
+          {isLevelComplete && (
+            <View style={styles.gameOverOverlay}>
+              <Celebration active={showCelebration} type="levelComplete" />
+              <View style={[styles.gameOverModal, styles.levelCompleteModal]}>
+                <Text style={styles.levelCompleteTitle}>LEVEL COMPLETE!</Text>
+
+                {/* Star Animation */}
+                <View style={styles.starAnimationContainer}>
+                  <StarAnimation stars={earnedStars} animate={showStarAnimation} size={36} />
+                </View>
+
+                <Text style={styles.gameOverScore}>Score</Text>
+                <Text style={styles.gameOverScoreValue}>{score.toLocaleString()}</Text>
+                {movesRemaining !== null && movesRemaining > 0 && (
+                  <Text style={styles.movesBonus}>
+                    +{movesRemaining} moves remaining!
+                  </Text>
+                )}
+                {demoMode ? (
+                  <Text style={styles.demoAutoText}>Next level...</Text>
+                ) : (
+                  <View style={styles.gameOverButtons}>
+                    <GlowButton
+                      title="NEXT LEVEL"
+                      onPress={handleNextLevel}
+                      variant="gold"
+                      size="large"
+                    />
+                    <GlowButton
+                      title="HOME"
+                      onPress={handleLevelCompleteBack}
+                      variant="secondary"
+                      size="medium"
+                      shimmer={false}
+                    />
+                  </View>
+                )}
+              </View>
+            </View>
+          )}
+
+          {/* Screen Flash Effect */}
+          <ScreenFlash trigger={flashTrigger} color={flashColor} />
         </View>
-      )}
-    </View>
+      </AnimatedBackground>
+    </ScreenShake>
   );
 }
 
@@ -1454,5 +1538,11 @@ const styles = StyleSheet.create({
     color: '#AAA',
     marginTop: 16,
     fontStyle: 'italic',
+  },
+  starAnimationContainer: {
+    height: 60,
+    marginBottom: 16,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
 });
