@@ -585,7 +585,7 @@ function GameScreen({
           </Text>
 
           {/* Power-Ups Bar */}
-          {!demoMode && getBoosterCount && (
+          {getBoosterCount && (
             <PowerUpsBar
               gameMode={gameMode || 'classic'}
               onUsePowerUp={handleUsePowerUp}
