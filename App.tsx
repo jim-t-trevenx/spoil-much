@@ -564,17 +564,19 @@ function GameScreen({
 
           <ScoreDisplay score={score} combo={combo} />
 
-          <Board
-            board={board}
-            selectedBlock={selectedBlock}
-            swappingPair={swappingPair}
-            explodingBlocks={explodingBlocks}
-            powerUpActivations={powerUpActivations}
-            demoMode={demoMode}
-            onBlockPress={handleBlockPress}
-            onSwipe={handleSwipe}
-            onSwapAnimationComplete={handleSwapAnimationComplete}
-          />
+          <View style={styles.gameAreaBorder}>
+            <Board
+              board={board}
+              selectedBlock={selectedBlock}
+              swappingPair={swappingPair}
+              explodingBlocks={explodingBlocks}
+              powerUpActivations={powerUpActivations}
+              demoMode={demoMode}
+              onBlockPress={handleBlockPress}
+              onSwipe={handleSwipe}
+              onSwapAnimationComplete={handleSwapAnimationComplete}
+            />
+          </View>
 
           <Text style={styles.instructions}>
             {demoMode
@@ -1115,6 +1117,17 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     paddingTop: 20,
+  },
+  gameAreaBorder: {
+    borderWidth: 3,
+    borderColor: 'rgba(255, 215, 0, 0.6)',
+    borderRadius: 16,
+    padding: 8,
+    backgroundColor: 'rgba(0, 0, 0, 0.3)',
+    shadowColor: '#FFD700',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.4,
+    shadowRadius: 12,
   },
   header: {
     flexDirection: 'row',
