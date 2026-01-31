@@ -40,8 +40,8 @@ type BlockProps = {
   onSwapAnimationComplete?: () => void;
 };
 
-const PARTICLE_COUNT = 8;
-const PARTICLE_SIZE = 12;
+const PARTICLE_COUNT = 12; // More particles for casino feel
+const PARTICLE_SIZE = 14;
 const SHARD_COUNT = 6;
 const SHARD_WIDTH = 8;
 const SHARD_HEIGHT = 16;
@@ -125,6 +125,144 @@ const PropellerIcon: React.FC = () => {
     <View style={styles.iconContainer}>
       <Text style={styles.propellerIcon}>✈</Text>
     </View>
+  );
+};
+
+// Sparkle Effect for Special Blocks
+const SparkleEffect: React.FC<{ color: string; intensity?: number }> = ({ color, intensity = 1 }) => {
+  const sparkle1 = useRef(new Animated.Value(0)).current;
+  const sparkle2 = useRef(new Animated.Value(0)).current;
+  const sparkle3 = useRef(new Animated.Value(0)).current;
+  const pulse = useRef(new Animated.Value(1)).current;
+
+  useEffect(() => {
+    // Continuous sparkle animation
+    const sparkleAnimation = (value: Animated.Value, delay: number) =>
+      Animated.loop(
+        Animated.sequence([
+          Animated.delay(delay),
+          Animated.timing(value, {
+            toValue: 1,
+            duration: 400,
+            useNativeDriver: true,
+          }),
+          Animated.timing(value, {
+            toValue: 0,
+            duration: 400,
+            useNativeDriver: true,
+          }),
+          Animated.delay(800),
+        ])
+      );
+
+    // Continuous pulse
+    const pulseAnimation = Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulse, {
+          toValue: 1.15,
+          duration: 600,
+          easing: Easing.inOut(Easing.ease),
+          useNativeDriver: true,
+        }),
+        Animated.timing(pulse, {
+          toValue: 1,
+          duration: 600,
+          easing: Easing.inOut(Easing.ease),
+          useNativeDriver: true,
+        }),
+      ])
+    );
+
+    sparkleAnimation(sparkle1, 0).start();
+    sparkleAnimation(sparkle2, 400).start();
+    sparkleAnimation(sparkle3, 800).start();
+    pulseAnimation.start();
+
+    return () => {
+      sparkle1.stopAnimation();
+      sparkle2.stopAnimation();
+      sparkle3.stopAnimation();
+      pulse.stopAnimation();
+    };
+  }, []);
+
+  return (
+    <View style={styles.sparkleContainer} pointerEvents="none">
+      {/* Pulsing glow */}
+      <Animated.View
+        style={[
+          styles.sparkleGlow,
+          {
+            backgroundColor: color,
+            transform: [{ scale: pulse }],
+            opacity: Animated.multiply(pulse, 0.3 * intensity),
+          },
+        ]}
+      />
+      {/* Sparkle points */}
+      <Animated.View
+        style={[
+          styles.sparklePoint,
+          styles.sparklePoint1,
+          { opacity: sparkle1 },
+        ]}
+      >
+        <Text style={styles.sparkleEmoji}>✦</Text>
+      </Animated.View>
+      <Animated.View
+        style={[
+          styles.sparklePoint,
+          styles.sparklePoint2,
+          { opacity: sparkle2 },
+        ]}
+      >
+        <Text style={styles.sparkleEmoji}>✧</Text>
+      </Animated.View>
+      <Animated.View
+        style={[
+          styles.sparklePoint,
+          styles.sparklePoint3,
+          { opacity: sparkle3 },
+        ]}
+      >
+        <Text style={styles.sparkleEmoji}>✦</Text>
+      </Animated.View>
+    </View>
+  );
+};
+
+// Rainbow Shimmer Effect
+const RainbowShimmer: React.FC = () => {
+  const shimmer = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    Animated.loop(
+      Animated.timing(shimmer, {
+        toValue: 1,
+        duration: 2000,
+        easing: Easing.linear,
+        useNativeDriver: true,
+      })
+    ).start();
+  }, []);
+
+  return (
+    <Animated.View
+      style={[
+        styles.rainbowShimmer,
+        {
+          transform: [
+            {
+              translateX: shimmer.interpolate({
+                inputRange: [0, 1],
+                outputRange: [-BLOCK_SIZE, BLOCK_SIZE],
+              }),
+            },
+          ],
+        },
+      ]}
+      pointerEvents="none"
+    />
   );
 };
 
@@ -927,10 +1065,31 @@ export const Block: React.FC<BlockProps> = ({
           <View style={styles.gemShineSmall} />
           <View style={styles.gemInnerGlow} />
 
-          {isRocket && <RocketIcon type={specialType as 'rocket-h' | 'rocket-v'} />}
-          {isRainbow && <RainbowIcon />}
-          {isBomb && <BombIcon />}
-          {isPropeller && <PropellerIcon />}
+          {isRocket && (
+            <>
+              <SparkleEffect color="#00BFFF" intensity={0.8} />
+              <RocketIcon type={specialType as 'rocket-h' | 'rocket-v'} />
+            </>
+          )}
+          {isRainbow && (
+            <>
+              <RainbowShimmer />
+              <SparkleEffect color="#FFD700" intensity={1.2} />
+              <RainbowIcon />
+            </>
+          )}
+          {isBomb && (
+            <>
+              <SparkleEffect color="#FF4500" intensity={1} />
+              <BombIcon />
+            </>
+          )}
+          {isPropeller && (
+            <>
+              <SparkleEffect color="#00BFFF" intensity={0.8} />
+              <PropellerIcon />
+            </>
+          )}
 
           {/* Obstacle overlays */}
           {obstacle?.type === 'box' && <BoxOverlay health={obstacle.health} />}
@@ -1442,5 +1601,57 @@ const styles = StyleSheet.create({
     height: 16,
     transform: [{ rotate: '12deg' }],
     backgroundColor: '#2E8B22',
+  },
+  // Sparkle effect styles
+  sparkleContainer: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    justifyContent: 'center',
+    alignItems: 'center',
+    overflow: 'visible',
+  },
+  sparkleGlow: {
+    position: 'absolute',
+    width: BLOCK_SIZE * 1.2,
+    height: BLOCK_SIZE * 1.2,
+    borderRadius: BLOCK_SIZE * 0.6,
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 1,
+    shadowRadius: 15,
+  },
+  sparklePoint: {
+    position: 'absolute',
+  },
+  sparklePoint1: {
+    top: -4,
+    right: 2,
+  },
+  sparklePoint2: {
+    bottom: 2,
+    left: -2,
+  },
+  sparklePoint3: {
+    top: 6,
+    left: 4,
+  },
+  sparkleEmoji: {
+    fontSize: 10,
+    color: '#FFFFFF',
+    textShadowColor: '#FFFFFF',
+    textShadowOffset: { width: 0, height: 0 },
+    textShadowRadius: 4,
+  },
+  // Rainbow shimmer effect
+  rainbowShimmer: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    width: BLOCK_SIZE * 0.5,
+    height: '100%',
+    backgroundColor: 'rgba(255, 255, 255, 0.4)',
+    transform: [{ skewX: '-20deg' }],
   },
 });
