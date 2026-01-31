@@ -4,15 +4,32 @@ export type SpecialType = 'rocket-h' | 'rocket-v' | 'bomb' | 'propeller' | 'rain
 
 export type Difficulty = 'easy' | 'medium';
 
+// Obstacle types
+export type ObstacleType = 'box' | 'ice' | 'chain' | 'blocker' | 'grass';
+
+export type Obstacle = {
+  type: ObstacleType;
+  health: number; // Hits remaining (boxes: 1-3, others: 1)
+};
+
 export type Block = {
   id: string;
   color: string;
   row: number;
   col: number;
   specialType: SpecialType;
+  obstacle?: Obstacle | null;
 };
 
 export type Board = Block[][];
+
+// Obstacle configuration
+export type ObstacleConfig = {
+  type: ObstacleType;
+  row: number;
+  col: number;
+  health?: number;
+};
 
 const ROCKET_COUNTS: Record<Difficulty, number> = {
   easy: 4,
@@ -98,7 +115,10 @@ export const createInitialBoard = (difficulty: Difficulty = 'medium'): Board => 
 };
 
 export const cloneBoard = (board: Board): Board => {
-  return board.map(row => row.map(block => ({ ...block })));
+  return board.map(row => row.map(block => ({
+    ...block,
+    obstacle: block.obstacle ? { ...block.obstacle } : null,
+  })));
 };
 
 export const swapBlocks = (
@@ -138,4 +158,76 @@ export const areAdjacent = (
   const rowDiff = Math.abs(row1 - row2);
   const colDiff = Math.abs(col1 - col2);
   return (rowDiff === 1 && colDiff === 0) || (rowDiff === 0 && colDiff === 1);
+};
+
+// Create a board with obstacles from config
+export const createBoardWithObstacles = (
+  difficulty: Difficulty,
+  obstacles: ObstacleConfig[]
+): Board => {
+  const board = createInitialBoard(difficulty);
+
+  for (const config of obstacles) {
+    const { type, row, col, health } = config;
+    if (row >= 0 && row < GRID_SIZE && col >= 0 && col < GRID_SIZE) {
+      // Default health based on obstacle type
+      const defaultHealth = type === 'box' ? (health ?? 2) : 1;
+
+      board[row][col].obstacle = {
+        type,
+        health: health ?? defaultHealth,
+      };
+
+      // Blockers have no color (can't be matched)
+      if (type === 'blocker') {
+        board[row][col].color = '';
+      }
+    }
+  }
+
+  return board;
+};
+
+// Check if a block can be swapped (not a blocker)
+export const canSwap = (block: Block): boolean => {
+  if (!block.color) return false;
+  if (block.obstacle?.type === 'blocker') return false;
+  return true;
+};
+
+// Check if a block can be matched (has color and not blocked)
+export const canMatch = (block: Block): boolean => {
+  if (!block.color) return false;
+  if (block.obstacle?.type === 'blocker') return false;
+  return true;
+};
+
+// Damage an obstacle, returns true if destroyed
+export const damageObstacle = (block: Block): boolean => {
+  if (!block.obstacle) return false;
+
+  block.obstacle.health -= 1;
+
+  if (block.obstacle.health <= 0) {
+    block.obstacle = null;
+    return true;
+  }
+
+  return false;
+};
+
+// Get default health for obstacle type
+export const getObstacleDefaultHealth = (type: ObstacleType): number => {
+  switch (type) {
+    case 'box':
+      return 2; // 2 hits by default
+    case 'ice':
+    case 'chain':
+    case 'grass':
+      return 1;
+    case 'blocker':
+      return 999; // Effectively indestructible
+    default:
+      return 1;
+  }
 };

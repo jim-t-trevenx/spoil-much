@@ -17,15 +17,42 @@ import { COLORS } from './utils/constants';
 
 type Screen = 'home' | 'game';
 
-// Sample level config for testing objectives
+// Sample level config for testing objectives with obstacles
 const SAMPLE_LEVEL: LevelConfig = {
   id: 1,
   name: 'Level 1',
-  moves: 20,
+  moves: 25,
   objectives: [
     { type: 'clearColor', color: COLORS[0], count: 30 }, // Red
-    { type: 'clearColor', color: COLORS[2], count: 25 }, // Blue
+    { type: 'clearObstacle', obstacle: 'box', count: 4 }, // Clear 4 boxes
   ],
+  obstacles: [
+    // Boxes (require 2 hits)
+    { type: 'box', row: 2, col: 2, health: 2 },
+    { type: 'box', row: 2, col: 5, health: 2 },
+    { type: 'box', row: 5, col: 2, health: 2 },
+    { type: 'box', row: 5, col: 5, health: 2 },
+    // Ice blocks (break when adjacent matches happen)
+    { type: 'ice', row: 3, col: 3 },
+    { type: 'ice', row: 3, col: 4 },
+    { type: 'ice', row: 4, col: 3 },
+    { type: 'ice', row: 4, col: 4 },
+    // Grass (spreads to adjacent cells)
+    { type: 'grass', row: 0, col: 0 },
+    { type: 'grass', row: 7, col: 7 },
+  ],
+};
+
+// Get obstacle icon/emoji for display
+const getObstacleIcon = (obstacle: string): string => {
+  switch (obstacle) {
+    case 'box': return '📦';
+    case 'ice': return '🧊';
+    case 'chain': return '⛓️';
+    case 'grass': return '🌿';
+    case 'blocker': return '🪨';
+    default: return '❓';
+  }
 };
 
 // Objectives Panel Component
@@ -46,6 +73,11 @@ function ObjectivesPanel({ objectives }: { objectives: ObjectiveProgress[] }) {
                 ]}
               />
             )}
+            {progress.objective.type === 'clearObstacle' && (
+              <Text style={styles.objectiveIcon}>
+                {getObstacleIcon(progress.objective.obstacle)}
+              </Text>
+            )}
             <View style={styles.objectiveTextContainer}>
               <Text
                 style={[
@@ -55,7 +87,9 @@ function ObjectivesPanel({ objectives }: { objectives: ObjectiveProgress[] }) {
               >
                 {progress.objective.type === 'clearColor'
                   ? `${getColorName(progress.objective.color)}`
-                  : getObjectiveText(progress.objective)}
+                  : progress.objective.type === 'clearObstacle'
+                    ? `Clear ${progress.objective.obstacle}`
+                    : getObjectiveText(progress.objective)}
               </Text>
               <Text
                 style={[
@@ -651,6 +685,10 @@ const styles = StyleSheet.create({
     marginRight: 10,
     borderWidth: 2,
     borderColor: 'rgba(255, 255, 255, 0.3)',
+  },
+  objectiveIcon: {
+    fontSize: 18,
+    marginRight: 10,
   },
   objectiveTextContainer: {
     flex: 1,

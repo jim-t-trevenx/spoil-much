@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { StyleSheet, Pressable, Animated, Text, View, Easing } from 'react-native';
 import { BLOCK_SIZE, BLOCK_MARGIN, TOTAL_BLOCK_SIZE, GRID_SIZE } from '../utils/constants';
-import { SpecialType } from '../utils/boardUtils';
+import { SpecialType, Obstacle } from '../utils/boardUtils';
 
 export type SwapDirection = 'left' | 'right' | 'up' | 'down' | null;
 
@@ -30,6 +30,7 @@ type BlockProps = {
   isSelected: boolean;
   swapDirection: SwapDirection;
   specialType: SpecialType;
+  obstacle?: Obstacle | null;
   isExploding: boolean;
   isRocketExplosion: boolean;
   rocketActivation?: RocketActivation;
@@ -123,6 +124,69 @@ const PropellerIcon: React.FC = () => {
   return (
     <View style={styles.iconContainer}>
       <Text style={styles.propellerIcon}>✈</Text>
+    </View>
+  );
+};
+
+// Obstacle Overlay Components
+const BoxOverlay: React.FC<{ health: number }> = ({ health }) => {
+  return (
+    <View style={styles.obstacleOverlay} pointerEvents="none">
+      <View style={[styles.boxOverlay, health >= 3 && styles.boxStrong]}>
+        <View style={styles.boxPlank} />
+        <View style={[styles.boxPlank, styles.boxPlankVertical]} />
+        {health >= 2 && <View style={styles.boxNail} />}
+        {health >= 3 && <View style={[styles.boxNail, styles.boxNailRight]} />}
+      </View>
+      {health > 1 && (
+        <Text style={styles.obstacleHealth}>{health}</Text>
+      )}
+    </View>
+  );
+};
+
+const IceOverlay: React.FC = () => {
+  return (
+    <View style={styles.obstacleOverlay} pointerEvents="none">
+      <View style={styles.iceOverlay}>
+        <View style={styles.iceCrack} />
+        <View style={[styles.iceCrack, styles.iceCrackDiagonal]} />
+        <View style={styles.iceShine} />
+      </View>
+    </View>
+  );
+};
+
+const ChainOverlay: React.FC = () => {
+  return (
+    <View style={styles.obstacleOverlay} pointerEvents="none">
+      <View style={styles.chainOverlay}>
+        <View style={styles.chainLink} />
+        <View style={[styles.chainLink, styles.chainLinkBottom]} />
+        <View style={styles.chainVertical} />
+      </View>
+    </View>
+  );
+};
+
+const BlockerOverlay: React.FC = () => {
+  return (
+    <View style={[styles.obstacleOverlay, styles.blockerOverlay]} pointerEvents="none">
+      <View style={styles.blockerInner}>
+        <Text style={styles.blockerIcon}>🪨</Text>
+      </View>
+    </View>
+  );
+};
+
+const GrassOverlay: React.FC = () => {
+  return (
+    <View style={styles.obstacleOverlay} pointerEvents="none">
+      <View style={styles.grassOverlay}>
+        <View style={styles.grassBlade} />
+        <View style={[styles.grassBlade, styles.grassBladeLeft]} />
+        <View style={[styles.grassBlade, styles.grassBladeRight]} />
+      </View>
     </View>
   );
 };
@@ -548,6 +612,7 @@ export const Block: React.FC<BlockProps> = ({
   isSelected,
   swapDirection,
   specialType,
+  obstacle,
   isExploding,
   isRocketExplosion,
   rocketActivation,
@@ -822,6 +887,15 @@ export const Block: React.FC<BlockProps> = ({
   const isBomb = specialType === 'bomb';
   const isPropeller = specialType === 'propeller';
 
+  // Blocker blocks render differently
+  if (obstacle?.type === 'blocker') {
+    return (
+      <View style={styles.blockContainer}>
+        <BlockerOverlay />
+      </View>
+    );
+  }
+
   return (
     <View style={[styles.blockContainer, showParticles && styles.explodingContainer]}>
       <Pressable onPress={onPress}>
@@ -857,6 +931,12 @@ export const Block: React.FC<BlockProps> = ({
           {isRainbow && <RainbowIcon />}
           {isBomb && <BombIcon />}
           {isPropeller && <PropellerIcon />}
+
+          {/* Obstacle overlays */}
+          {obstacle?.type === 'box' && <BoxOverlay health={obstacle.health} />}
+          {obstacle?.type === 'ice' && <IceOverlay />}
+          {obstacle?.type === 'chain' && <ChainOverlay />}
+          {obstacle?.type === 'grass' && <GrassOverlay />}
         </Animated.View>
       </Pressable>
       {showParticles && (
@@ -1173,5 +1253,194 @@ const styles = StyleSheet.create({
     height: '50%',
     backgroundColor: 'rgba(255, 255, 255, 0.1)',
     borderRadius: BLOCK_SIZE * 0.2,
+  },
+  // Obstacle overlay styles
+  obstacleOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderRadius: 6,
+  },
+  obstacleHealth: {
+    position: 'absolute',
+    bottom: 2,
+    right: 4,
+    fontSize: 10,
+    fontWeight: 'bold',
+    color: '#FFF',
+    textShadowColor: '#000',
+    textShadowOffset: { width: 1, height: 1 },
+    textShadowRadius: 2,
+  },
+  // Box obstacle
+  boxOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(139, 90, 43, 0.85)',
+    borderRadius: 4,
+    borderWidth: 2,
+    borderColor: '#5D3A1A',
+    overflow: 'hidden',
+  },
+  boxStrong: {
+    backgroundColor: 'rgba(101, 67, 33, 0.9)',
+    borderColor: '#3D2817',
+  },
+  boxPlank: {
+    position: 'absolute',
+    top: '45%',
+    left: 0,
+    right: 0,
+    height: 3,
+    backgroundColor: '#5D3A1A',
+  },
+  boxPlankVertical: {
+    top: 0,
+    bottom: 0,
+    left: '45%',
+    right: 'auto',
+    width: 3,
+    height: '100%',
+  },
+  boxNail: {
+    position: 'absolute',
+    top: '20%',
+    left: '20%',
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#888',
+  },
+  boxNailRight: {
+    left: 'auto',
+    right: '20%',
+  },
+  // Ice obstacle
+  iceOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(173, 216, 230, 0.6)',
+    borderRadius: 4,
+    borderWidth: 2,
+    borderColor: 'rgba(100, 180, 220, 0.8)',
+    overflow: 'hidden',
+  },
+  iceCrack: {
+    position: 'absolute',
+    top: '30%',
+    left: '20%',
+    width: '60%',
+    height: 2,
+    backgroundColor: 'rgba(255, 255, 255, 0.8)',
+    transform: [{ rotate: '15deg' }],
+  },
+  iceCrackDiagonal: {
+    top: '50%',
+    left: '30%',
+    width: '40%',
+    transform: [{ rotate: '-25deg' }],
+  },
+  iceShine: {
+    position: 'absolute',
+    top: 4,
+    left: 4,
+    width: 10,
+    height: 10,
+    backgroundColor: 'rgba(255, 255, 255, 0.9)',
+    borderRadius: 5,
+  },
+  // Chain obstacle
+  chainOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  chainLink: {
+    position: 'absolute',
+    top: 4,
+    width: 16,
+    height: 10,
+    borderWidth: 3,
+    borderColor: '#666',
+    borderRadius: 5,
+    backgroundColor: 'transparent',
+  },
+  chainLinkBottom: {
+    top: 'auto',
+    bottom: 4,
+  },
+  chainVertical: {
+    position: 'absolute',
+    width: 4,
+    height: '50%',
+    backgroundColor: '#666',
+    borderRadius: 2,
+  },
+  // Blocker obstacle
+  blockerOverlay: {
+    backgroundColor: '#555',
+    borderRadius: 6,
+  },
+  blockerInner: {
+    width: BLOCK_SIZE,
+    height: BLOCK_SIZE,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#444',
+    borderRadius: 6,
+    borderWidth: 3,
+    borderTopColor: '#666',
+    borderLeftColor: '#555',
+    borderRightColor: '#333',
+    borderBottomColor: '#222',
+  },
+  blockerIcon: {
+    fontSize: 24,
+  },
+  // Grass obstacle
+  grassOverlay: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    height: '50%',
+    overflow: 'hidden',
+  },
+  grassBlade: {
+    position: 'absolute',
+    bottom: 0,
+    left: '45%',
+    width: 4,
+    height: 18,
+    backgroundColor: '#228B22',
+    borderTopLeftRadius: 4,
+    borderTopRightRadius: 4,
+    transform: [{ rotate: '0deg' }],
+  },
+  grassBladeLeft: {
+    left: '25%',
+    height: 14,
+    transform: [{ rotate: '-15deg' }],
+    backgroundColor: '#32CD32',
+  },
+  grassBladeRight: {
+    left: '65%',
+    height: 16,
+    transform: [{ rotate: '12deg' }],
+    backgroundColor: '#2E8B22',
   },
 });
