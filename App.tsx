@@ -1,20 +1,517 @@
+import React, { useState } from 'react';
 import { StatusBar } from 'expo-status-bar';
-import { StyleSheet, Text, View } from 'react-native';
+import {
+  StyleSheet,
+  Text,
+  View,
+  TouchableOpacity,
+  SafeAreaView,
+} from 'react-native';
+import { Board } from './components/Board';
+import { ScoreDisplay } from './components/ScoreDisplay';
+import { useGameLogic } from './hooks/useGameLogic';
+import { useHighScores, HighScore } from './hooks/useHighScores';
+import { Difficulty } from './utils/boardUtils';
+
+type Screen = 'home' | 'game';
+
+function HomeScreen({
+  onPlay,
+  onDemo,
+  highScores,
+}: {
+  onPlay: (difficulty: Difficulty) => void;
+  onDemo: () => void;
+  highScores: HighScore[];
+}) {
+  return (
+    <View style={styles.homeContainer}>
+      <Text style={styles.title}>SPOIL MUCH</Text>
+      <Text style={styles.subtitle}>A Match-3 Puzzle Game</Text>
+
+      <Text style={styles.modeLabel}>SELECT MODE</Text>
+      <View style={styles.modeButtons}>
+        <TouchableOpacity
+          style={[styles.modeButton, styles.easyButton]}
+          onPress={() => onPlay('easy')}
+        >
+          <Text style={styles.modeButtonText}>EASY</Text>
+          <Text style={styles.modeDescription}>Start with rockets</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.modeButton, styles.mediumButton]}
+          onPress={() => onPlay('medium')}
+        >
+          <Text style={styles.modeButtonText}>MEDIUM</Text>
+          <Text style={styles.modeDescription}>Classic mode</Text>
+        </TouchableOpacity>
+      </View>
+
+      <TouchableOpacity style={styles.demoButton} onPress={onDemo}>
+        <Text style={styles.demoButtonText}>WATCH DEMO</Text>
+        <Text style={styles.demoDescription}>See the game play itself</Text>
+      </TouchableOpacity>
+
+      {highScores.length > 0 && (
+        <View style={styles.highScoresContainer}>
+          <Text style={styles.highScoresTitle}>TOP 5 HIGH SCORES</Text>
+          {highScores.map((entry, index) => (
+            <View key={index} style={styles.scoreRow}>
+              <Text style={styles.scoreRank}>#{index + 1}</Text>
+              <Text style={styles.scoreValue}>{entry.score.toLocaleString()}</Text>
+              <Text style={styles.scoreDate}>{entry.date}</Text>
+            </View>
+          ))}
+        </View>
+      )}
+    </View>
+  );
+}
+
+function GameScreen({
+  onBack,
+  onSaveScore,
+  difficulty,
+  demoMode = false,
+}: {
+  onBack: () => void;
+  onSaveScore: (score: number) => void;
+  difficulty: Difficulty;
+  demoMode?: boolean;
+}) {
+  const {
+    board,
+    score,
+    selectedBlock,
+    combo,
+    swappingPair,
+    explodingBlocks,
+    powerUpActivations,
+    timeRemaining,
+    isGameOver,
+    handleBlockPress,
+    handleSwipe,
+    handleSwapAnimationComplete,
+    resetGame,
+  } = useGameLogic({ difficulty, demoMode });
+
+  const handleBack = () => {
+    if (!demoMode && score > 0) {
+      onSaveScore(score);
+    }
+    onBack();
+  };
+
+  const handleReset = () => {
+    if (score > 0) {
+      onSaveScore(score);
+    }
+    resetGame();
+  };
+
+  const handleGameOverBack = () => {
+    onSaveScore(score);
+    onBack();
+  };
+
+  const handlePlayAgain = () => {
+    onSaveScore(score);
+    resetGame();
+  };
+
+  // Format time as MM:SS
+  const formatTime = (seconds: number | null) => {
+    if (seconds === null) return '--';
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
+  };
+
+  return (
+    <View style={styles.gameContainer}>
+      <View style={styles.header}>
+        <TouchableOpacity style={styles.backButton} onPress={handleBack}>
+          <Text style={styles.backButtonText}>{demoMode ? '← Exit Demo' : '← Back'}</Text>
+        </TouchableOpacity>
+
+        {/* Timer Display */}
+        {!demoMode && timeRemaining !== null && (
+          <View style={[styles.timerBadge, timeRemaining <= 10 && styles.timerWarning]}>
+            <Text style={[styles.timerText, timeRemaining <= 10 && styles.timerTextWarning]}>
+              {formatTime(timeRemaining)}
+            </Text>
+          </View>
+        )}
+
+        {demoMode && (
+          <View style={[styles.difficultyBadge, styles.demoBadge]}>
+            <Text style={styles.difficultyText}>DEMO</Text>
+          </View>
+        )}
+
+        {!demoMode && (
+          <TouchableOpacity style={styles.resetButton} onPress={handleReset}>
+            <Text style={styles.resetButtonText}>Reset</Text>
+          </TouchableOpacity>
+        )}
+        {demoMode && <View style={styles.resetButton} />}
+      </View>
+
+      <ScoreDisplay score={score} combo={combo} />
+
+      <Board
+        board={board}
+        selectedBlock={selectedBlock}
+        swappingPair={swappingPair}
+        explodingBlocks={explodingBlocks}
+        powerUpActivations={powerUpActivations}
+        demoMode={demoMode}
+        onBlockPress={handleBlockPress}
+        onSwipe={handleSwipe}
+        onSwapAnimationComplete={handleSwapAnimationComplete}
+      />
+
+      <Text style={styles.instructions}>
+        {demoMode
+          ? 'Watching AI play automatically.\nTap "Exit Demo" to return home.'
+          : 'Swipe blocks to swap them.\nMatch 3 or more of the same color!'}
+      </Text>
+
+      {/* Game Over Overlay */}
+      {isGameOver && (
+        <View style={styles.gameOverOverlay}>
+          <View style={styles.gameOverModal}>
+            <Text style={styles.gameOverTitle}>TIME'S UP!</Text>
+            <Text style={styles.gameOverScore}>Final Score</Text>
+            <Text style={styles.gameOverScoreValue}>{score.toLocaleString()}</Text>
+            <View style={styles.gameOverButtons}>
+              <TouchableOpacity style={styles.gameOverButton} onPress={handlePlayAgain}>
+                <Text style={styles.gameOverButtonText}>PLAY AGAIN</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={[styles.gameOverButton, styles.gameOverButtonSecondary]} onPress={handleGameOverBack}>
+                <Text style={styles.gameOverButtonTextSecondary}>HOME</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      )}
+    </View>
+  );
+}
 
 export default function App() {
+  const [screen, setScreen] = useState<Screen>('home');
+  const [difficulty, setDifficulty] = useState<Difficulty>('medium');
+  const [demoMode, setDemoMode] = useState(false);
+  const [gameKey, setGameKey] = useState(0);
+  const { highScores, saveHighScore } = useHighScores();
+
+  const handleSaveScore = async (score: number) => {
+    await saveHighScore(score);
+  };
+
+  const handlePlay = (selectedDifficulty: Difficulty) => {
+    setDifficulty(selectedDifficulty);
+    setDemoMode(false);
+    setGameKey(prev => prev + 1);
+    setScreen('game');
+  };
+
+  const handleDemo = () => {
+    setDifficulty('easy');
+    setDemoMode(true);
+    setGameKey(prev => prev + 1);
+    setScreen('game');
+  };
+
+  const handleBack = () => {
+    setDemoMode(false);
+    setScreen('home');
+  };
+
   return (
-    <View style={styles.container}>
-      <Text>Open up App.tsx to start working on your app!</Text>
-      <StatusBar style="auto" />
-    </View>
+    <SafeAreaView style={styles.container}>
+      <StatusBar style="light" />
+      {screen === 'home' ? (
+        <HomeScreen onPlay={handlePlay} onDemo={handleDemo} highScores={highScores} />
+      ) : (
+        <GameScreen
+          key={gameKey}
+          onBack={handleBack}
+          onSaveScore={handleSaveScore}
+          difficulty={difficulty}
+          demoMode={demoMode}
+        />
+      )}
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#fff',
+    backgroundColor: '#1a1a2e',
+  },
+  homeContainer: {
+    flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
+    padding: 20,
+  },
+  title: {
+    fontSize: 48,
+    fontWeight: 'bold',
+    color: '#FFF',
+    marginBottom: 10,
+    letterSpacing: 4,
+  },
+  subtitle: {
+    fontSize: 18,
+    color: '#AAA',
+    marginBottom: 40,
+  },
+  modeLabel: {
+    fontSize: 14,
+    color: '#888',
+    marginBottom: 16,
+    letterSpacing: 2,
+  },
+  modeButtons: {
+    flexDirection: 'row',
+    gap: 16,
+    marginBottom: 40,
+  },
+  modeButton: {
+    paddingHorizontal: 24,
+    paddingVertical: 16,
+    borderRadius: 16,
+    alignItems: 'center',
+    minWidth: 120,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 5,
+  },
+  easyButton: {
+    backgroundColor: '#00CC00',
+    shadowColor: '#00CC00',
+  },
+  mediumButton: {
+    backgroundColor: '#0066FF',
+    shadowColor: '#0066FF',
+  },
+  demoButton: {
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    paddingHorizontal: 32,
+    paddingVertical: 14,
+    borderRadius: 12,
+    alignItems: 'center',
+    marginBottom: 40,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.2)',
+  },
+  demoButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#AAA',
+    letterSpacing: 2,
+  },
+  demoDescription: {
+    fontSize: 11,
+    color: 'rgba(255, 255, 255, 0.5)',
+    marginTop: 4,
+  },
+  modeButtonText: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#FFF',
+    letterSpacing: 2,
+  },
+  modeDescription: {
+    fontSize: 11,
+    color: 'rgba(255, 255, 255, 0.8)',
+    marginTop: 4,
+  },
+  highScoresContainer: {
+    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    borderRadius: 16,
+    padding: 20,
+    width: '100%',
+    maxWidth: 300,
+  },
+  highScoresTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#FFD700',
+    textAlign: 'center',
+    marginBottom: 16,
+    letterSpacing: 2,
+  },
+  scoreRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255, 255, 255, 0.1)',
+  },
+  scoreRank: {
+    fontSize: 14,
+    color: '#888',
+    width: 30,
+  },
+  scoreValue: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#FFF',
+    flex: 1,
+  },
+  scoreDate: {
+    fontSize: 12,
+    color: '#666',
+  },
+  gameContainer: {
+    flex: 1,
+    alignItems: 'center',
+    paddingTop: 20,
+  },
+  header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    width: '100%',
+    paddingHorizontal: 20,
+    marginBottom: 20,
+  },
+  backButton: {
+    padding: 10,
+  },
+  backButtonText: {
+    fontSize: 16,
+    color: '#AAA',
+  },
+  difficultyBadge: {
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  easyBadge: {
+    backgroundColor: 'rgba(0, 204, 0, 0.3)',
+  },
+  mediumBadge: {
+    backgroundColor: 'rgba(0, 102, 255, 0.3)',
+  },
+  demoBadge: {
+    backgroundColor: 'rgba(255, 165, 0, 0.3)',
+  },
+  difficultyText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#FFF',
+    letterSpacing: 1,
+  },
+  resetButton: {
+    backgroundColor: 'rgba(255, 107, 107, 0.2)',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 8,
+  },
+  resetButtonText: {
+    fontSize: 14,
+    color: '#FF6B6B',
+    fontWeight: '600',
+  },
+  instructions: {
+    marginTop: 30,
+    fontSize: 14,
+    color: '#666',
+    textAlign: 'center',
+    lineHeight: 22,
+  },
+  // Timer styles
+  timerBadge: {
+    backgroundColor: 'rgba(255, 255, 255, 0.15)',
+    paddingHorizontal: 16,
+    paddingVertical: 6,
+    borderRadius: 20,
+    borderWidth: 2,
+    borderColor: 'rgba(255, 255, 255, 0.3)',
+  },
+  timerWarning: {
+    backgroundColor: 'rgba(255, 50, 50, 0.3)',
+    borderColor: '#FF3232',
+  },
+  timerText: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#FFF',
+    fontVariant: ['tabular-nums'],
+  },
+  timerTextWarning: {
+    color: '#FF3232',
+  },
+  // Game Over styles
+  gameOverOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0, 0, 0, 0.85)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  gameOverModal: {
+    backgroundColor: '#1a1a2e',
+    borderRadius: 24,
+    padding: 32,
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: 'rgba(255, 255, 255, 0.2)',
+    minWidth: 280,
+  },
+  gameOverTitle: {
+    fontSize: 32,
+    fontWeight: 'bold',
+    color: '#FFD700',
+    marginBottom: 24,
+    letterSpacing: 2,
+  },
+  gameOverScore: {
+    fontSize: 16,
+    color: '#888',
+    marginBottom: 8,
+  },
+  gameOverScoreValue: {
+    fontSize: 48,
+    fontWeight: 'bold',
+    color: '#FFF',
+    marginBottom: 32,
+  },
+  gameOverButtons: {
+    gap: 12,
+    width: '100%',
+  },
+  gameOverButton: {
+    backgroundColor: '#4CAF50',
+    paddingVertical: 14,
+    paddingHorizontal: 32,
+    borderRadius: 12,
+    alignItems: 'center',
+  },
+  gameOverButtonSecondary: {
+    backgroundColor: 'transparent',
+    borderWidth: 2,
+    borderColor: 'rgba(255, 255, 255, 0.3)',
+  },
+  gameOverButtonText: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#FFF',
+    letterSpacing: 1,
+  },
+  gameOverButtonTextSecondary: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#AAA',
+    letterSpacing: 1,
   },
 });
