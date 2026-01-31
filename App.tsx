@@ -40,57 +40,43 @@ const getObstacleIcon = (obstacle: string): string => {
   }
 };
 
-// Objectives Panel Component
+// Objectives Panel Component - Compact top-left display
 function ObjectivesPanel({ objectives }: { objectives: ObjectiveProgress[] }) {
   if (objectives.length === 0) return null;
 
   return (
     <View style={styles.objectivesPanel}>
-      <Text style={styles.objectivesTitle}>OBJECTIVES</Text>
-      <View style={styles.objectivesList}>
-        {objectives.map((progress, index) => (
-          <View key={index} style={styles.objectiveItem}>
-            {progress.objective.type === 'clearColor' && (
-              <View
-                style={[
-                  styles.objectiveColorDot,
-                  { backgroundColor: progress.objective.color },
-                ]}
-              />
-            )}
-            {progress.objective.type === 'clearObstacle' && (
-              <Text style={styles.objectiveIcon}>
-                {getObstacleIcon(progress.objective.obstacle)}
-              </Text>
-            )}
-            <View style={styles.objectiveTextContainer}>
-              <Text
-                style={[
-                  styles.objectiveText,
-                  progress.completed && styles.objectiveTextCompleted,
-                ]}
-              >
-                {progress.objective.type === 'clearColor'
-                  ? `${getColorName(progress.objective.color)}`
-                  : progress.objective.type === 'clearObstacle'
-                    ? `Clear ${progress.objective.obstacle}`
-                    : getObjectiveText(progress.objective)}
-              </Text>
-              <Text
-                style={[
-                  styles.objectiveProgress,
-                  progress.completed && styles.objectiveProgressCompleted,
-                ]}
-              >
-                {progress.current}/{progress.target}
-              </Text>
-            </View>
-            {progress.completed && (
-              <Text style={styles.objectiveCheck}>✓</Text>
-            )}
-          </View>
-        ))}
-      </View>
+      {objectives.map((progress, index) => (
+        <View key={index} style={styles.objectiveItem}>
+          {progress.objective.type === 'clearColor' && (
+            <View
+              style={[
+                styles.objectiveColorDot,
+                { backgroundColor: progress.objective.color },
+              ]}
+            />
+          )}
+          {progress.objective.type === 'clearObstacle' && (
+            <Text style={styles.objectiveIcon}>
+              {getObstacleIcon(progress.objective.obstacle)}
+            </Text>
+          )}
+          {progress.objective.type === 'reachScore' && (
+            <Text style={styles.objectiveIcon}>🎯</Text>
+          )}
+          <Text
+            style={[
+              styles.objectiveCount,
+              progress.completed && styles.objectiveCountCompleted,
+            ]}
+          >
+            {progress.current}/{progress.target}
+          </Text>
+          {progress.completed && (
+            <Text style={styles.objectiveCheck}>✓</Text>
+          )}
+        </View>
+      ))}
     </View>
   );
 }
@@ -443,6 +429,11 @@ function GameScreen({
     <ScreenShake trigger={shakeTrigger} intensity={shakeIntensity}>
       <AnimatedBackground combo={combo} particlesEnabled gradientEnabled={false}>
         <View style={styles.gameContainer}>
+          {/* Objectives Panel - Top Left */}
+          {objectiveProgress.length > 0 && (
+            <ObjectivesPanel objectives={objectiveProgress} />
+          )}
+
           <View style={styles.header}>
             <TouchableOpacity style={styles.backButton} onPress={handleBack}>
               <Text style={styles.backButtonText}>{demoMode ? '← Exit Demo' : '← Back'}</Text>
@@ -481,11 +472,6 @@ function GameScreen({
           </View>
 
           <ScoreDisplay score={score} combo={combo} />
-
-          {/* Objectives Panel */}
-          {objectiveProgress.length > 0 && (
-            <ObjectivesPanel objectives={objectiveProgress} />
-          )}
 
           <Board
             board={board}
@@ -1121,68 +1107,51 @@ const styles = StyleSheet.create({
   movesTextWarning: {
     color: '#FF9632',
   },
-  // Objectives Panel styles
+  // Objectives Panel styles - Top left compact display
   objectivesPanel: {
-    backgroundColor: 'rgba(0, 0, 0, 0.3)',
-    borderRadius: 12,
-    padding: 12,
-    marginBottom: 12,
-    minWidth: 200,
-  },
-  objectivesTitle: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: '#888',
-    letterSpacing: 1,
-    marginBottom: 8,
-    textAlign: 'center',
-  },
-  objectivesList: {
-    gap: 6,
+    position: 'absolute',
+    top: 70,
+    left: 12,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    zIndex: 100,
   },
   objectiveItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(255, 255, 255, 0.05)',
-    borderRadius: 8,
-    padding: 8,
+    backgroundColor: 'rgba(0, 0, 0, 0.6)',
+    borderRadius: 20,
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    borderWidth: 2,
+    borderColor: 'rgba(255, 255, 255, 0.2)',
   },
   objectiveColorDot: {
-    width: 20,
-    height: 20,
-    borderRadius: 4,
-    marginRight: 10,
+    width: 24,
+    height: 24,
+    borderRadius: 6,
+    marginRight: 8,
     borderWidth: 2,
-    borderColor: 'rgba(255, 255, 255, 0.3)',
+    borderColor: 'rgba(255, 255, 255, 0.4)',
   },
   objectiveIcon: {
-    fontSize: 18,
-    marginRight: 10,
+    fontSize: 20,
+    marginRight: 6,
   },
-  objectiveTextContainer: {
-    flex: 1,
-  },
-  objectiveText: {
-    fontSize: 13,
+  objectiveCount: {
+    fontSize: 14,
+    fontWeight: 'bold',
     color: '#FFF',
-    fontWeight: '500',
   },
-  objectiveTextCompleted: {
-    color: '#4CAF50',
-  },
-  objectiveProgress: {
-    fontSize: 12,
-    color: '#AAA',
-    marginTop: 2,
-  },
-  objectiveProgressCompleted: {
+  objectiveCountCompleted: {
     color: '#4CAF50',
   },
   objectiveCheck: {
-    fontSize: 16,
+    fontSize: 14,
     color: '#4CAF50',
     fontWeight: 'bold',
-    marginLeft: 8,
+    marginLeft: 4,
   },
   // Level Complete styles
   levelCompleteModal: {
