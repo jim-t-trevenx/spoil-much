@@ -6,6 +6,7 @@ import {
   View,
   TouchableOpacity,
   SafeAreaView,
+  ScrollView,
 } from 'react-native';
 import { Board } from './components/Board';
 import { ScoreDisplay } from './components/ScoreDisplay';
@@ -14,34 +15,9 @@ import { useHighScores, HighScore } from './hooks/useHighScores';
 import { Difficulty } from './utils/boardUtils';
 import { LevelConfig, ObjectiveProgress, getObjectiveText, getColorName } from './types/level';
 import { COLORS } from './utils/constants';
+import { getLevel, getNextLevelId, WORLDS, getTotalLevelCount } from './data/levels';
 
-type Screen = 'home' | 'game';
-
-// Sample level config for testing objectives with obstacles
-const SAMPLE_LEVEL: LevelConfig = {
-  id: 1,
-  name: 'Level 1',
-  moves: 25,
-  objectives: [
-    { type: 'clearColor', color: COLORS[0], count: 30 }, // Red
-    { type: 'clearObstacle', obstacle: 'box', count: 4 }, // Clear 4 boxes
-  ],
-  obstacles: [
-    // Boxes (require 2 hits)
-    { type: 'box', row: 2, col: 2, health: 2 },
-    { type: 'box', row: 2, col: 5, health: 2 },
-    { type: 'box', row: 5, col: 2, health: 2 },
-    { type: 'box', row: 5, col: 5, health: 2 },
-    // Ice blocks (break when adjacent matches happen)
-    { type: 'ice', row: 3, col: 3 },
-    { type: 'ice', row: 3, col: 4 },
-    { type: 'ice', row: 4, col: 3 },
-    { type: 'ice', row: 4, col: 4 },
-    // Grass (spreads to adjacent cells)
-    { type: 'grass', row: 0, col: 0 },
-    { type: 'grass', row: 7, col: 7 },
-  ],
-};
+type Screen = 'home' | 'game' | 'levels';
 
 // Get obstacle icon/emoji for display
 const getObstacleIcon = (obstacle: string): string => {
@@ -179,6 +155,7 @@ function HomeScreen({
 function GameScreen({
   onBack,
   onSaveScore,
+  onNextLevel,
   difficulty,
   gameMode = 'classic',
   demoMode = false,
@@ -186,6 +163,7 @@ function GameScreen({
 }: {
   onBack: () => void;
   onSaveScore: (score: number) => void;
+  onNextLevel?: () => void;
   difficulty: Difficulty;
   gameMode?: GameMode;
   demoMode?: boolean;
@@ -241,8 +219,11 @@ function GameScreen({
 
   const handleNextLevel = () => {
     onSaveScore(score);
-    // For now, just reset (in future, load next level)
-    resetGame();
+    if (onNextLevel) {
+      onNextLevel();
+    } else {
+      resetGame();
+    }
   };
 
   // Format time as MM:SS
@@ -365,12 +346,64 @@ function GameScreen({
   );
 }
 
+// Levels Screen Component
+function LevelsScreen({
+  onSelectLevel,
+  onBack,
+}: {
+  onSelectLevel: (levelId: number) => void;
+  onBack: () => void;
+}) {
+  const totalLevels = getTotalLevelCount();
+  const levelButtons = Array.from({ length: totalLevels }, (_, i) => i + 1);
+
+  return (
+    <View style={styles.levelsContainer}>
+      <View style={styles.levelsHeader}>
+        <TouchableOpacity style={styles.backButton} onPress={onBack}>
+          <Text style={styles.backButtonText}>← Back</Text>
+        </TouchableOpacity>
+        <Text style={styles.levelsTitle}>SELECT LEVEL</Text>
+        <View style={styles.backButton} />
+      </View>
+
+      <ScrollView contentContainerStyle={styles.levelsGrid}>
+        {WORLDS.map(world => (
+          <View key={world.id} style={styles.worldSection}>
+            <Text style={styles.worldTitle}>{world.name}</Text>
+            <View style={styles.worldLevels}>
+              {world.levels.map(levelId => {
+                const level = getLevel(levelId);
+                return (
+                  <TouchableOpacity
+                    key={levelId}
+                    style={styles.levelButton}
+                    onPress={() => onSelectLevel(levelId)}
+                  >
+                    <Text style={styles.levelNumber}>{levelId}</Text>
+                    {level?.name && (
+                      <Text style={styles.levelName} numberOfLines={1}>
+                        {level.name}
+                      </Text>
+                    )}
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          </View>
+        ))}
+      </ScrollView>
+    </View>
+  );
+}
+
 export default function App() {
   const [screen, setScreen] = useState<Screen>('home');
   const [difficulty, setDifficulty] = useState<Difficulty>('medium');
   const [gameMode, setGameMode] = useState<GameMode>('classic');
   const [demoMode, setDemoMode] = useState(false);
   const [gameKey, setGameKey] = useState(0);
+  const [currentLevelId, setCurrentLevelId] = useState<number>(1);
   const [currentLevel, setCurrentLevel] = useState<LevelConfig | undefined>(undefined);
   const { highScores, saveHighScore } = useHighScores();
 
@@ -382,16 +415,41 @@ export default function App() {
     setDifficulty(selectedDifficulty);
     setGameMode(selectedGameMode);
     setDemoMode(false);
-    // Use sample level for classic mode to test objectives
-    setCurrentLevel(selectedGameMode === 'classic' ? SAMPLE_LEVEL : undefined);
+
+    if (selectedGameMode === 'classic') {
+      // Go to level select for classic mode
+      setScreen('levels');
+    } else {
+      // Arcade mode starts immediately
+      setCurrentLevel(undefined);
+      setGameKey(prev => prev + 1);
+      setScreen('game');
+    }
+  };
+
+  const handleSelectLevel = (levelId: number) => {
+    const level = getLevel(levelId);
+    setCurrentLevelId(levelId);
+    setCurrentLevel(level);
     setGameKey(prev => prev + 1);
     setScreen('game');
+  };
+
+  const handleNextLevel = () => {
+    const nextId = getNextLevelId(currentLevelId);
+    if (nextId) {
+      handleSelectLevel(nextId);
+    } else {
+      // No more levels, go back to level select
+      setScreen('levels');
+    }
   };
 
   const handleDemo = () => {
     setDifficulty('easy');
     setGameMode('arcade');
     setDemoMode(true);
+    setCurrentLevel(undefined);
     setGameKey(prev => prev + 1);
     setScreen('game');
   };
@@ -401,16 +459,25 @@ export default function App() {
     setScreen('home');
   };
 
+  const handleBackToLevels = () => {
+    setScreen('levels');
+  };
+
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar style="light" />
-      {screen === 'home' ? (
+      {screen === 'home' && (
         <HomeScreen onPlay={handlePlay} onDemo={handleDemo} highScores={highScores} />
-      ) : (
+      )}
+      {screen === 'levels' && (
+        <LevelsScreen onSelectLevel={handleSelectLevel} onBack={handleBack} />
+      )}
+      {screen === 'game' && (
         <GameScreen
           key={gameKey}
-          onBack={handleBack}
+          onBack={gameMode === 'classic' ? handleBackToLevels : handleBack}
           onSaveScore={handleSaveScore}
+          onNextLevel={handleNextLevel}
           difficulty={difficulty}
           gameMode={gameMode}
           demoMode={demoMode}
@@ -799,5 +866,62 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#AAA',
     letterSpacing: 1,
+  },
+  // Levels Screen styles
+  levelsContainer: {
+    flex: 1,
+    paddingTop: 20,
+  },
+  levelsHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    marginBottom: 20,
+  },
+  levelsTitle: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#FFF',
+    letterSpacing: 2,
+  },
+  levelsGrid: {
+    paddingHorizontal: 20,
+    paddingBottom: 40,
+  },
+  worldSection: {
+    marginBottom: 24,
+  },
+  worldTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#FFD700',
+    marginBottom: 12,
+    letterSpacing: 1,
+  },
+  worldLevels: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+  },
+  levelButton: {
+    width: 60,
+    height: 60,
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    borderRadius: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: 'rgba(255, 255, 255, 0.2)',
+  },
+  levelNumber: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#FFF',
+  },
+  levelName: {
+    fontSize: 8,
+    color: '#AAA',
+    marginTop: 2,
   },
 });
