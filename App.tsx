@@ -297,6 +297,31 @@ function GameScreen({
     resetGame,
   } = useGameLogic({ difficulty, demoMode, gameMode, levelConfig });
 
+  // Demo mode: auto-advance on level complete, auto-restart on fail
+  React.useEffect(() => {
+    if (!demoMode) return;
+
+    if (isLevelComplete) {
+      // Auto-advance to next level after 2 seconds
+      const timer = setTimeout(() => {
+        if (onNextLevel) {
+          onNextLevel();
+        } else {
+          resetGame();
+        }
+      }, 2000);
+      return () => clearTimeout(timer);
+    }
+
+    if (isGameOver && !isLevelComplete) {
+      // Auto-restart after 2 seconds
+      const timer = setTimeout(() => {
+        resetGame();
+      }, 2000);
+      return () => clearTimeout(timer);
+    }
+  }, [demoMode, isLevelComplete, isGameOver, onNextLevel, resetGame]);
+
   const handleBack = () => {
     if (!demoMode && score > 0) {
       onSaveScore(score);
@@ -431,14 +456,18 @@ function GameScreen({
             </Text>
             <Text style={styles.gameOverScore}>Final Score</Text>
             <Text style={styles.gameOverScoreValue}>{score.toLocaleString()}</Text>
-            <View style={styles.gameOverButtons}>
-              <TouchableOpacity style={styles.gameOverButton} onPress={handleGameOverPlayAgain}>
-                <Text style={styles.gameOverButtonText}>PLAY AGAIN</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={[styles.gameOverButton, styles.gameOverButtonSecondary]} onPress={handleGameOverBack}>
-                <Text style={styles.gameOverButtonTextSecondary}>HOME</Text>
-              </TouchableOpacity>
-            </View>
+            {demoMode ? (
+              <Text style={styles.demoAutoText}>Restarting...</Text>
+            ) : (
+              <View style={styles.gameOverButtons}>
+                <TouchableOpacity style={styles.gameOverButton} onPress={handleGameOverPlayAgain}>
+                  <Text style={styles.gameOverButtonText}>PLAY AGAIN</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={[styles.gameOverButton, styles.gameOverButtonSecondary]} onPress={handleGameOverBack}>
+                  <Text style={styles.gameOverButtonTextSecondary}>HOME</Text>
+                </TouchableOpacity>
+              </View>
+            )}
           </View>
         </View>
       )}
@@ -455,14 +484,18 @@ function GameScreen({
                 +{movesRemaining} moves remaining!
               </Text>
             )}
-            <View style={styles.gameOverButtons}>
-              <TouchableOpacity style={[styles.gameOverButton, styles.nextLevelButton]} onPress={handleNextLevel}>
-                <Text style={styles.gameOverButtonText}>NEXT LEVEL</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={[styles.gameOverButton, styles.gameOverButtonSecondary]} onPress={handleLevelCompleteBack}>
-                <Text style={styles.gameOverButtonTextSecondary}>HOME</Text>
-              </TouchableOpacity>
-            </View>
+            {demoMode ? (
+              <Text style={styles.demoAutoText}>Next level...</Text>
+            ) : (
+              <View style={styles.gameOverButtons}>
+                <TouchableOpacity style={[styles.gameOverButton, styles.nextLevelButton]} onPress={handleNextLevel}>
+                  <Text style={styles.gameOverButtonText}>NEXT LEVEL</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={[styles.gameOverButton, styles.gameOverButtonSecondary]} onPress={handleLevelCompleteBack}>
+                  <Text style={styles.gameOverButtonTextSecondary}>HOME</Text>
+                </TouchableOpacity>
+              </View>
+            )}
           </View>
         </View>
       )}
@@ -700,10 +733,15 @@ export default function App() {
   };
 
   const handleDemo = () => {
+    // Demo mode plays through actual levels
+    const demoLevelId = Math.floor(Math.random() * 10) + 1; // Random level 1-10
+    const level = getLevel(demoLevelId);
     setDifficulty('easy');
-    setGameMode('arcade');
+    setGameMode('classic');
     setDemoMode(true);
-    setCurrentLevel(undefined);
+    setCurrentLevelId(demoLevelId);
+    setCurrentLevel(level);
+    setSelectedBoosters(DEFAULT_SELECTED_BOOSTERS);
     setGameKey(prev => prev + 1);
     setScreen('game');
   };
@@ -1410,5 +1448,11 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     color: '#FFF',
     letterSpacing: 2,
+  },
+  demoAutoText: {
+    fontSize: 16,
+    color: '#AAA',
+    marginTop: 16,
+    fontStyle: 'italic',
   },
 });
