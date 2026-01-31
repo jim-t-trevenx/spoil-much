@@ -13,12 +13,14 @@ import { ScoreDisplay } from './components/ScoreDisplay';
 import { useGameLogic, GameMode } from './hooks/useGameLogic';
 import { useHighScores, HighScore } from './hooks/useHighScores';
 import { useProgress, useLives, calculateStars } from './hooks/useProgress';
+import { useBoosters, SelectedBoosters, DEFAULT_SELECTED_BOOSTERS } from './hooks/useBoosters';
+import { BOOSTER_INFO, getPreGameBoosters, getInGamePowerUps, InGamePowerUpType } from './types/boosters';
 import { Difficulty } from './utils/boardUtils';
 import { LevelConfig, ObjectiveProgress, getObjectiveText, getColorName } from './types/level';
 import { COLORS } from './utils/constants';
 import { getLevel, getNextLevelId, WORLDS, getTotalLevelCount } from './data/levels';
 
-type Screen = 'home' | 'game' | 'levels';
+type Screen = 'home' | 'game' | 'levels' | 'pre-level';
 
 // Get obstacle icon/emoji for display
 const getObstacleIcon = (obstacle: string): string => {
@@ -153,6 +155,100 @@ function HomeScreen({
   );
 }
 
+// Pre-Level Screen Component
+function PreLevelScreen({
+  level,
+  onStart,
+  onBack,
+  selectedBoosters,
+  onToggleBooster,
+  getBoosterCount,
+  coins,
+}: {
+  level: LevelConfig;
+  onStart: () => void;
+  onBack: () => void;
+  selectedBoosters: SelectedBoosters;
+  onToggleBooster: (booster: keyof SelectedBoosters) => void;
+  getBoosterCount: (type: any) => number;
+  coins: number;
+}) {
+  const boosters = getPreGameBoosters();
+
+  return (
+    <View style={styles.preLevelContainer}>
+      <View style={styles.preLevelHeader}>
+        <TouchableOpacity style={styles.backButton} onPress={onBack}>
+          <Text style={styles.backButtonText}>← Back</Text>
+        </TouchableOpacity>
+        <View style={styles.coinDisplay}>
+          <Text style={styles.coinIcon}>🪙</Text>
+          <Text style={styles.coinValue}>{coins}</Text>
+        </View>
+      </View>
+
+      <View style={styles.preLevelContent}>
+        <Text style={styles.preLevelTitle}>Level {level.id}</Text>
+        {level.name && <Text style={styles.preLevelName}>{level.name}</Text>}
+
+        <View style={styles.preLevelInfo}>
+          <View style={styles.preLevelInfoItem}>
+            <Text style={styles.preLevelInfoIcon}>👆</Text>
+            <Text style={styles.preLevelInfoValue}>{level.moves}</Text>
+            <Text style={styles.preLevelInfoLabel}>moves</Text>
+          </View>
+        </View>
+
+        <Text style={styles.preLevelObjectivesTitle}>OBJECTIVES</Text>
+        <View style={styles.preLevelObjectives}>
+          {level.objectives.map((obj, i) => (
+            <View key={i} style={styles.preLevelObjective}>
+              <Text style={styles.preLevelObjectiveText}>
+                {getObjectiveText(obj)}
+              </Text>
+            </View>
+          ))}
+        </View>
+
+        <Text style={styles.boostersTitle}>BOOSTERS</Text>
+        <View style={styles.boostersGrid}>
+          {boosters.map(type => {
+            const info = BOOSTER_INFO[type];
+            const count = getBoosterCount(type);
+            const boosterKey = type.replace(/_/g, '') as keyof SelectedBoosters;
+            const mappedKey = type === 'extra_moves' ? 'extraMoves'
+              : type === 'rocket_start' ? 'rocketStart'
+              : type === 'bomb_start' ? 'bombStart'
+              : 'rainbowStart';
+            const isSelected = selectedBoosters[mappedKey as keyof SelectedBoosters];
+
+            return (
+              <TouchableOpacity
+                key={type}
+                style={[
+                  styles.boosterButton,
+                  isSelected && styles.boosterButtonSelected,
+                  count === 0 && styles.boosterButtonDisabled,
+                ]}
+                onPress={() => count > 0 && onToggleBooster(mappedKey as keyof SelectedBoosters)}
+                disabled={count === 0}
+              >
+                <Text style={styles.boosterIcon}>{info.icon}</Text>
+                <Text style={styles.boosterName}>{info.name}</Text>
+                <Text style={styles.boosterCount}>x{count}</Text>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+
+        <TouchableOpacity style={styles.startButton} onPress={onStart}>
+          <Text style={styles.startButtonText}>PLAY</Text>
+        </TouchableOpacity>
+      </View>
+    </View>
+  );
+}
+
 function GameScreen({
   onBack,
   onSaveScore,
@@ -164,6 +260,9 @@ function GameScreen({
   demoMode = false,
   levelConfig,
   hasLives = true,
+  selectedBoosters,
+  onUseInGamePowerUp,
+  getBoosterCount,
 }: {
   onBack: () => void;
   onSaveScore: (score: number) => void;
@@ -175,6 +274,9 @@ function GameScreen({
   demoMode?: boolean;
   levelConfig?: LevelConfig;
   hasLives?: boolean;
+  selectedBoosters?: SelectedBoosters;
+  onUseInGamePowerUp?: (type: InGamePowerUpType) => boolean;
+  getBoosterCount?: (type: any) => number;
 }) {
   const {
     board,
@@ -504,6 +606,12 @@ export default function App() {
     hasLives,
     getTimeUntilNextLife,
   } = useLives();
+  const {
+    useBooster,
+    hasBooster,
+    getBoosterCount,
+  } = useBoosters();
+  const [selectedBoosters, setSelectedBoosters] = useState<SelectedBoosters>(DEFAULT_SELECTED_BOOSTERS);
 
   const handleSaveScore = async (score: number) => {
     await saveHighScore(score);
@@ -545,8 +653,40 @@ export default function App() {
     const level = getLevel(levelId);
     setCurrentLevelId(levelId);
     setCurrentLevel(level);
+    setSelectedBoosters(DEFAULT_SELECTED_BOOSTERS);
+    setScreen('pre-level');
+  };
+
+  const handleToggleBooster = (booster: keyof SelectedBoosters) => {
+    setSelectedBoosters(prev => ({
+      ...prev,
+      [booster]: !prev[booster],
+    }));
+  };
+
+  const handleStartLevel = async () => {
+    // Use selected boosters
+    if (selectedBoosters.extraMoves && hasBooster('extra_moves')) {
+      await useBooster('extra_moves');
+    }
+    if (selectedBoosters.rocketStart && hasBooster('rocket_start')) {
+      await useBooster('rocket_start');
+    }
+    if (selectedBoosters.bombStart && hasBooster('bomb_start')) {
+      await useBooster('bomb_start');
+    }
+    if (selectedBoosters.rainbowStart && hasBooster('rainbow_start')) {
+      await useBooster('rainbow_start');
+    }
+
     setGameKey(prev => prev + 1);
     setScreen('game');
+  };
+
+  const handleUseInGamePowerUp = (type: InGamePowerUpType): boolean => {
+    if (!hasBooster(type)) return false;
+    useBooster(type);
+    return true;
   };
 
   const handleNextLevel = () => {
@@ -595,6 +735,17 @@ export default function App() {
           getTimeUntilNextLife={getTimeUntilNextLife}
         />
       )}
+      {screen === 'pre-level' && currentLevel && (
+        <PreLevelScreen
+          level={currentLevel}
+          onStart={handleStartLevel}
+          onBack={handleBackToLevels}
+          selectedBoosters={selectedBoosters}
+          onToggleBooster={handleToggleBooster}
+          getBoosterCount={getBoosterCount}
+          coins={progress.coins}
+        />
+      )}
       {screen === 'game' && (
         <GameScreen
           key={gameKey}
@@ -608,6 +759,9 @@ export default function App() {
           demoMode={demoMode}
           levelConfig={currentLevel}
           hasLives={hasLives}
+          selectedBoosters={selectedBoosters}
+          onUseInGamePowerUp={handleUseInGamePowerUp}
+          getBoosterCount={getBoosterCount}
         />
       )}
     </SafeAreaView>
@@ -1103,5 +1257,158 @@ const styles = StyleSheet.create({
   statTimer: {
     fontSize: 12,
     color: '#AAA',
+  },
+  // Pre-Level Screen styles
+  preLevelContainer: {
+    flex: 1,
+    paddingTop: 20,
+  },
+  preLevelHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    marginBottom: 20,
+  },
+  coinDisplay: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255, 215, 0, 0.2)',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+  },
+  coinIcon: {
+    fontSize: 18,
+    marginRight: 6,
+  },
+  coinValue: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#FFD700',
+  },
+  preLevelContent: {
+    flex: 1,
+    alignItems: 'center',
+    paddingHorizontal: 20,
+  },
+  preLevelTitle: {
+    fontSize: 36,
+    fontWeight: 'bold',
+    color: '#FFF',
+    marginBottom: 4,
+  },
+  preLevelName: {
+    fontSize: 18,
+    color: '#AAA',
+    marginBottom: 24,
+  },
+  preLevelInfo: {
+    flexDirection: 'row',
+    marginBottom: 24,
+  },
+  preLevelInfoItem: {
+    alignItems: 'center',
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: 12,
+  },
+  preLevelInfoIcon: {
+    fontSize: 24,
+    marginBottom: 4,
+  },
+  preLevelInfoValue: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#FFF',
+  },
+  preLevelInfoLabel: {
+    fontSize: 12,
+    color: '#AAA',
+  },
+  preLevelObjectivesTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#888',
+    letterSpacing: 1,
+    marginBottom: 12,
+  },
+  preLevelObjectives: {
+    width: '100%',
+    marginBottom: 24,
+  },
+  preLevelObjective: {
+    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    marginBottom: 8,
+  },
+  preLevelObjectiveText: {
+    fontSize: 14,
+    color: '#FFF',
+  },
+  boostersTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#888',
+    letterSpacing: 1,
+    marginBottom: 12,
+  },
+  boostersGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'center',
+    gap: 12,
+    marginBottom: 32,
+  },
+  boosterButton: {
+    width: 80,
+    alignItems: 'center',
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    paddingVertical: 12,
+    paddingHorizontal: 8,
+    borderRadius: 12,
+    borderWidth: 2,
+    borderColor: 'transparent',
+  },
+  boosterButtonSelected: {
+    borderColor: '#4CAF50',
+    backgroundColor: 'rgba(76, 175, 80, 0.2)',
+  },
+  boosterButtonDisabled: {
+    opacity: 0.4,
+  },
+  boosterIcon: {
+    fontSize: 24,
+    marginBottom: 4,
+  },
+  boosterName: {
+    fontSize: 10,
+    color: '#FFF',
+    textAlign: 'center',
+    marginBottom: 2,
+  },
+  boosterCount: {
+    fontSize: 12,
+    color: '#AAA',
+  },
+  startButton: {
+    backgroundColor: '#4CAF50',
+    paddingVertical: 16,
+    paddingHorizontal: 64,
+    borderRadius: 30,
+    shadowColor: '#4CAF50',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 5,
+  },
+  startButtonText: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#FFF',
+    letterSpacing: 2,
   },
 });
